@@ -818,17 +818,30 @@ body {
 }
 
 /* ========== Toast 提示样式 ========== */
-.toast {
+.toast-stack {
   position: fixed;
   top: 90px;
   right: 20px;
+  width: min(360px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 100000;
+  pointer-events: none;
+}
+
+.toast {
+  position: relative;
   padding: 12px 20px;
-  border-radius: 8px;
+  border-radius: 14px;
   color: white;
   font-weight: 600;
-  z-index: 100000;
   animation: slideInRight 0.3s ease-out;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  line-height: 1.45;
+  pointer-events: auto;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(12px);
 }
 
 .toast.success {
@@ -2517,9 +2530,12 @@ body:not(.home-mode) .back-home-btn:hover {
       <div class="bar">
         <input type="file" id="file3-monthly" accept=".xlsx,.csv" style="display:none" onchange="FeedbackApp.loadAndProcessMonthly(this)">
         <button onclick="FeedbackApp.selectFile('file3-monthly')" class="primary">导入表格</button>
+        <button onclick="FeedbackApp.exportTotalUnfeed()" class="success">导出总未反馈</button>
+        <button onclick="FeedbackApp.exportScienceUnfeedDirect()" class="success">导出理科未反馈</button>
+        <button onclick="FeedbackApp.exportEnglishUnfeedDirect()" class="success">导出英语未反馈</button>
         <button onclick="FeedbackApp.reset()" class="warning">重置</button>
       </div>
-      <div class="tip">导入后自动进行月度查重、删除重复项、一键清理，并只保留未反馈数据</div>
+      <div class="tip">导入后自动进行月度查重、删除重复项、一键清理，并只保留未反馈数据；导出按钮也已合并到这里</div>
       
       <!-- 清理结果显示区域（隐藏） -->
       <div class="table-wrap" style="max-height:35vh;margin-top:16px;display:none;">
@@ -2528,17 +2544,6 @@ body:not(.home-mode) .back-home-btn:hover {
           <tbody id="cleanBody"></tbody>
         </table>
       </div>
-    </div>
-
-    <!-- 未反馈 -->
-    <div class="section">
-      <h4>📝 未反馈</h4>
-      <div class="bar">
-        <button onclick="FeedbackApp.exportTotalUnfeed()" class="success">导出总未反馈</button>
-        <button onclick="FeedbackApp.exportScienceUnfeedDirect()" class="success">导出理科未反馈</button>
-        <button onclick="FeedbackApp.exportEnglishUnfeedDirect()" class="success">导出英语未反馈</button>
-      </div>
-      <div class="tip">按需导出</div>
     </div>
   </div>
 </div>
@@ -2641,16 +2646,27 @@ function goHome() {
 
 // ==================== Toast 提示函数 ====================
 function showToast(message, type = 'info', duration = 3000) {
+  let stack = document.getElementById('toastStack');
+  if (!stack) {
+    stack = document.createElement('div');
+    stack.id = 'toastStack';
+    stack.className = 'toast-stack';
+    document.body.appendChild(stack);
+  }
+
   const toast = document.createElement('div');
   toast.className = `toast ${type}`;
   toast.textContent = message;
-  document.body.appendChild(toast);
+  stack.appendChild(toast);
   
   setTimeout(() => {
     toast.style.animation = 'slideInRight 0.3s ease-out reverse';
     setTimeout(() => {
       if (toast.parentNode) {
-        document.body.removeChild(toast);
+        toast.parentNode.removeChild(toast);
+      }
+      if (stack && stack.childElementCount === 0 && stack.parentNode) {
+        stack.parentNode.removeChild(stack);
       }
     }, 300);
   }, duration);
