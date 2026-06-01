@@ -1,6 +1,4 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
+<html lang="zh-CN"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>教务工具集</title>
@@ -2342,12 +2340,12 @@ body:not(.home-mode) .back-home-btn:hover {
 }
 </style>
 </head>
-<body>
+<body class="home-mode">
 
 <!-- ========== 导航栏 ========== -->
 <nav class="navbar" id="navbar">
   <div class="navbar-brand">教务工具集</div>
-  <div class="navbar-nav" id="navbarNav">
+  <div class="navbar-nav" id="navbarNav" style="display: none;">
     <div class="nav-item" onclick="switchPage('teacher')">
       <span class="icon">👨‍🏫</span>
       <span>兼职老师课表</span>
@@ -2402,7 +2400,7 @@ body:not(.home-mode) .back-home-btn:hover {
         <div class="card-icon-wrap">
           <span class="card-icon">👨‍🏫</span>
         </div>
-        <p class="card-desc">筛选兼职老师课程，查重去重，一键导出分老师课表</p>
+        <p class="card-desc">可一键导出所有兼职课表</p>
         <div class="card-tags">
           <span class="tag">📋 课表筛选</span>
           <span class="tag">🔍 查重去重</span>
@@ -2418,7 +2416,7 @@ body:not(.home-mode) .back-home-btn:hover {
         <div class="card-icon-wrap">
           <span class="card-icon">💙</span>
         </div>
-        <p class="card-desc">快速定位未反馈课程，清理虚拟教师和orientation课程</p>
+        <p class="card-desc">快速定位未反馈课程，理科和英语实现分开导出，还可用作日常哟</p>
         <div class="card-tags">
           <span class="tag">📝 未反馈统计</span>
           <span class="tag">🧹 课程清理</span>
@@ -2571,7 +2569,7 @@ body:not(.home-mode) .back-home-btn:hover {
         </select>
         <button onclick="TeacherListApp.addTeacher()" class="success add-teacher-btn">添加</button>
       </div>
-      <div class="tip" id="teacherSyncStatus">正在检查老师名单云端同步状态...</div>
+      <div class="tip" id="teacherSyncStatus">当前为本地模式，未连接云端同步</div>
       <div class="tip">输入老师姓名并选择类型后点击添加</div>
     </div>
 
@@ -2582,12 +2580,12 @@ body:not(.home-mode) .back-home-btn:hover {
         <!-- 全职老师列 -->
         <div class="teacher-column fulltime">
           <div class="teacher-column-header">👨‍🏫 理科全职（<span id="fulltimeCount">0</span>人）</div>
-          <div id="fulltimeList"></div>
+          <div id="fulltimeList"><div class="teacher-empty">暂无老师 ✨</div></div>
         </div>
         <!-- 兼职老师列 -->
         <div class="teacher-column parttime">
           <div class="teacher-column-header">👩‍🏫 理科兼职（<span id="parttimeCount">0</span>人）</div>
-          <div id="parttimeList"></div>
+          <div id="parttimeList"><div class="teacher-empty">暂无老师 ✨</div></div>
         </div>
       </div>
     </div>
@@ -4693,5 +4691,6 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-</body>
-</html>
+
+
+<div id="toastStack" class="toast-stack"><div class="toast success">欢迎使用教务工具集 🛠️</div></div></body><div id="codex-browser-sidebar-comments-root" style="position: fixed; inset: 0px; pointer-events: none; z-index: 2147483000;"></div></html>
