@@ -1411,12 +1411,6 @@ body.home-mode .back-home-btn {
   letter-spacing: 0.08em;
 }
 
-.home-version {
-  font-size: 12px !important;
-  color: rgba(234, 255, 245, 0.62) !important;
-  letter-spacing: 0.04em !important;
-}
-
 /* ========== 老师名单卡片 ========== */
 .card-teacherlist .tag { color: #fff7ed; }
 
@@ -2445,7 +2439,6 @@ body:not(.home-mode) .back-home-btn:hover {
 
     <!-- 底部信息 -->
     <div class="home-footer">
-      <p class="home-version" id="homeVersion">版本：2026-06-02 01:20</p>
       <p>点击任一卡片即可进入对应工具</p>
     </div>
   </div>
@@ -2762,6 +2755,21 @@ const TeacherApp = (function() {
     return sortedData;
   }
 
+  function clearNameForGroupRows(rows) {
+    if (!rows || rows.length === 0) return rows;
+    const classTypeIdx = head.findIndex(h => h.toString().trim() === '班级类型');
+    const nameIdx = head.findIndex(h => h.toString().trim().includes('姓名'));
+    if (nameIdx === -1 || classTypeIdx === -1) return rows;
+
+    return rows.map(row => {
+      const classTypeVal = (row[classTypeIdx] ?? '').toString().trim();
+      if (!classTypeVal.includes('多人')) return row;
+      const cloned = [...row];
+      cloned[nameIdx] = '';
+      return cloned;
+    });
+  }
+
   async function findDuplicates() {
     const map = new Map();
     duplicateRows = [];
@@ -2856,8 +2864,8 @@ const TeacherApp = (function() {
       partTimeTeacherRows[teacher].forEach(index => {
         filteredData.push(data[index]);
       });
-      
-      const sortedData = sortDataByTimeAndDate(filteredData);
+
+      const sortedData = sortDataByTimeAndDate([filteredData[0], ...clearNameForGroupRows(filteredData.slice(1))]);
       
       // 显示课表区域并渲染
       const tableSection = document.getElementById('teacherTableSection');
@@ -3179,8 +3187,8 @@ const TeacherApp = (function() {
       teacherRowIndices.forEach(index => {
         exportData.push(data[index]);
       });
-      
-      const sortedData = sortDataByTimeAndDate(exportData);
+
+      const sortedData = sortDataByTimeAndDate([exportData[0], ...clearNameForGroupRows(exportData.slice(1))]);
       
       try {
         const ws = XLSX.utils.aoa_to_sheet(sortedData);
@@ -3478,6 +3486,21 @@ const FeedbackApp = (function() {
     }
   }
 
+  function clearNameForGroupRows(rows) {
+    if (!rows || rows.length === 0) return rows;
+    const classTypeIdx = head.findIndex(h => h.toString().trim() === '班级类型');
+    const nameIdx = head.findIndex(h => h.toString().trim().includes('姓名'));
+    if (nameIdx === -1 || classTypeIdx === -1) return rows;
+
+    return rows.map(row => {
+      const classTypeVal = (row[classTypeIdx] ?? '').toString().trim();
+      if (!classTypeVal.includes('多人')) return row;
+      const cloned = [...row];
+      cloned[nameIdx] = '';
+      return cloned;
+    });
+  }
+
   // 私有方法：删除重复项（日常模式）
   function removeDuplicatesDaily() {
     const map = new Map();
@@ -3494,7 +3517,7 @@ const FeedbackApp = (function() {
         dupCount++;
       }
     }
-    data = keep;
+    data = clearNameForGroupRows(keep);
     return dupCount;
   }
 
@@ -3514,7 +3537,7 @@ const FeedbackApp = (function() {
         dupCount++;
       }
     }
-    data = keep;
+    data = clearNameForGroupRows(keep);
     return dupCount;
   }
 
