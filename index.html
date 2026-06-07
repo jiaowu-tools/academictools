@@ -1,4 +1,4 @@
-<html lang="zh-CN"><head>
+﻿<html lang="zh-CN"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>教务工具集</title>
@@ -754,6 +754,97 @@ body {
   position: sticky;
   top: 0;
   z-index: 1000;
+}
+
+.page-feedback .virtual-table .schedule-empty-row td {
+  padding: 24px 14px;
+  text-align: center;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.page-feedback .virtual-table th.schedule-filterable {
+  min-width: 120px;
+  padding: 0;
+  overflow: visible;
+}
+
+.page-feedback .virtual-table .schedule-header-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 38px;
+  padding: 10px 12px;
+}
+
+.page-feedback .virtual-table .schedule-filter-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.page-feedback .virtual-table .schedule-filter-arrow {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent !important;
+  color: #94a3b8;
+  box-shadow: none !important;
+  transform: none !important;
+  font-size: 11px;
+  line-height: 18px;
+  justify-content: center;
+  cursor: pointer;
+  overflow: visible;
+}
+
+.page-feedback .virtual-table .schedule-filter-arrow::after {
+  display: none;
+}
+
+.page-feedback .virtual-table th.schedule-filterable.has-filter .schedule-filter-arrow,
+.page-feedback .virtual-table .schedule-filter-arrow:hover {
+  color: #2563eb;
+  background: rgba(37, 99, 235, 0.08) !important;
+}
+
+.page-feedback .virtual-table .schedule-filter-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 6px;
+  min-width: 180px;
+  max-width: 280px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+  color: #1e293b;
+  z-index: 2000;
+  padding: 4px 0;
+}
+
+.page-feedback .virtual-table .schedule-filter-option {
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: #fff;
+}
+
+.page-feedback .virtual-table .schedule-filter-option:hover {
+  background: #eff6ff;
+}
+
+.page-feedback .virtual-table .schedule-filter-option.active {
+  color: #1d4ed8;
+  background: #dbeafe;
 }
 
 .page-feedback .virtual-table tbody tr:hover {
@@ -3455,6 +3546,15 @@ body:not(.home-mode) .preview-dashboard-actions {
         </table>
       </div>
     </div>
+
+    <!-- 课表显示 -->
+    <div class="section" id="feedbackScheduleSection">
+      <h4>课表显示</h4>
+      <div class="tip" id="feedbackScheduleStatus">当前最新总表：等待导入</div>
+      <div class="table-wrap" id="feedbackScheduleWrap" style="max-height:60vh;margin-top:16px;display:none;">
+        <table id="mainTable3" class="virtual-table"></table>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -4195,6 +4295,10 @@ const FeedbackApp = (function() {
   ];
   let currentDupMode = 'daily';
   const BATCH_SIZE = 500;
+  let scheduleTableData = null;
+  let scheduleFilters = [];
+  let scheduleRenderToken = 0;
+  const SCHEDULE_FILTER_ALL = '__ALL__';
 
   function isOneClass(row) {
     const idx = head.findIndex(h => h.toString().trim() === '班级类型');
@@ -4281,19 +4385,157 @@ const FeedbackApp = (function() {
     return sortedData;
   }
 
+  function getFilteredScheduleRows() {
+    if (!scheduleTableData || scheduleTableData.length < 2) return [];
+    const rows = scheduleTableData.slice(1);
+    return rows.filter(row => scheduleFilters.every((filterValue, colIndex) => {
+      if (filterValue === SCHEDULE_FILTER_ALL || filterValue === undefined) return true;
+      return (row[colIndex] ?? '').toString().trim() === filterValue;
+    }));
+  }
+
+  function updateScheduleStatus(visibleCount, totalCount) {
+    const status = document.getElementById('feedbackScheduleStatus');
+    if (!status) return;
+    const hasFilter = scheduleFilters.some(v => v !== SCHEDULE_FILTER_ALL && v !== undefined);
+    status.textContent = hasFilter
+      ? `当前最新总表：筛选后 ${visibleCount} / 共 ${totalCount} 行`
+      : `当前最新总表：共 ${totalCount} 行`;
+  }
+
+  function getScheduleColumnValues(colIndex) {
+    if (!scheduleTableData || scheduleTableData.length < 2) return [];
+    const values = new Set();
+    scheduleTableData.slice(1).forEach(row => {
+      values.add((row[colIndex] ?? '').toString().trim());
+    });
+    return Array.from(values).sort((a, b) => {
+      if (a === '') return -1;
+      if (b === '') return 1;
+      return a.localeCompare(b, 'zh-CN');
+    });
+  }
+
+  function closeScheduleFilterMenus(root = document) {
+    root.querySelectorAll('.schedule-filter-menu').forEach(menu => menu.remove());
+  }
+
+  function createScheduleFilterOption(label, value, colIndex, th) {
+    const option = document.createElement('div');
+    option.className = 'schedule-filter-option';
+    option.textContent = label;
+    option.title = label;
+    if (scheduleFilters[colIndex] === value) option.classList.add('active');
+    option.addEventListener('click', event => {
+      event.stopPropagation();
+      scheduleFilters[colIndex] = value;
+      th.classList.toggle('has-filter', value !== SCHEDULE_FILTER_ALL);
+      closeScheduleFilterMenus();
+      renderScheduleRows();
+    });
+    return option;
+  }
+
+  function openScheduleFilterMenu(th, colIndex) {
+    const existing = th.querySelector('.schedule-filter-menu');
+    closeScheduleFilterMenus();
+    if (existing) return;
+
+    const menu = document.createElement('div');
+    menu.className = 'schedule-filter-menu';
+    menu.addEventListener('click', event => event.stopPropagation());
+    menu.appendChild(createScheduleFilterOption('全部', SCHEDULE_FILTER_ALL, colIndex, th));
+    getScheduleColumnValues(colIndex).forEach(value => {
+      menu.appendChild(createScheduleFilterOption(value || '(空白)', value, colIndex, th));
+    });
+    th.appendChild(menu);
+  }
+
+  document.addEventListener('click', () => closeScheduleFilterMenus());
+
+  async function renderScheduleRows() {
+    const token = ++scheduleRenderToken;
+    const t = document.getElementById('mainTable3');
+    const tbody = t?.querySelector('tbody');
+    if (!t || !tbody || !scheduleTableData) return;
+
+    const headers = scheduleTableData[0] || [];
+    const rows = getFilteredScheduleRows();
+    const totalCount = Math.max(scheduleTableData.length - 1, 0);
+    tbody.innerHTML = '';
+
+    if (rows.length === 0) {
+      const tr = document.createElement('tr');
+      tr.className = 'schedule-empty-row';
+      const td = document.createElement('td');
+      td.colSpan = Math.max(headers.length, 1);
+      td.textContent = '没有匹配的课程';
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+      updateScheduleStatus(0, totalCount);
+      return;
+    }
+
+    let ptr = 0;
+    while (ptr < rows.length) {
+      if (token !== scheduleRenderToken) return;
+      const end = Math.min(ptr + BATCH_SIZE, rows.length);
+      const batch = rows.slice(ptr, end);
+      batch.forEach(row => {
+        const tr = document.createElement('tr');
+        headers.forEach((_, colIndex) => {
+          const td = document.createElement('td');
+          td.textContent = row[colIndex] ?? '';
+          tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+      });
+      ptr = end;
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    if (token === scheduleRenderToken) {
+      updateScheduleStatus(rows.length, totalCount);
+    }
+  }
+
   async function renderTable(tableData) {
     try {
       const t = document.getElementById('mainTable3');
       if (!t) return;
-      
+
       t.innerHTML = '';
+      scheduleTableData = tableData;
       if (!tableData || tableData.length < 1) return;
+      scheduleFilters = (tableData[0] || []).map(() => SCHEDULE_FILTER_ALL);
 
       const h = document.createElement('thead');
       const hr = document.createElement('tr');
-      tableData[0].forEach(x => {
+      tableData[0].forEach((x, colIndex) => {
         const th = document.createElement('th');
-        th.textContent = x ?? '';
+        th.className = 'schedule-filterable';
+        const headerCell = document.createElement('div');
+        headerCell.className = 'schedule-header-cell';
+
+        const label = document.createElement('span');
+        label.className = 'schedule-filter-label';
+        label.textContent = x ?? '';
+        label.title = x ?? '';
+
+        const arrow = document.createElement('button');
+        arrow.type = 'button';
+        arrow.className = 'schedule-filter-arrow';
+        arrow.textContent = '▼';
+        arrow.title = `筛选${x ?? ''}`;
+        arrow.setAttribute('aria-label', `筛选${x ?? ''}`);
+        arrow.addEventListener('click', event => {
+          event.stopPropagation();
+          openScheduleFilterMenu(th, colIndex);
+        });
+
+        headerCell.appendChild(label);
+        headerCell.appendChild(arrow);
+        th.appendChild(headerCell);
         hr.appendChild(th);
       });
       h.appendChild(hr);
@@ -4301,28 +4543,23 @@ const FeedbackApp = (function() {
 
       const b = document.createElement('tbody');
       t.appendChild(b);
-      const rows = tableData.slice(1);
-
-      let ptr = 0;
-      while (ptr < rows.length) {
-        const end = Math.min(ptr + BATCH_SIZE, rows.length);
-        const batch = rows.slice(ptr, end);
-        batch.forEach(row => {
-          const tr = document.createElement('tr');
-          row.forEach(x => {
-            const td = document.createElement('td');
-            td.textContent = x ?? '';
-            tr.appendChild(td);
-          });
-          b.appendChild(tr);
-        });
-        ptr = end;
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
+      await renderScheduleRows();
     } catch (error) {
       console.error('Table rendering error:', error);
       showToast('表格渲染失败', 'error');
     }
+  }
+
+  function clearLatestSchedule(statusText = '当前最新总表：等待导入') {
+    const t = document.getElementById('mainTable3');
+    const wrap = document.getElementById('feedbackScheduleWrap');
+    const status = document.getElementById('feedbackScheduleStatus');
+    scheduleTableData = null;
+    scheduleFilters = [];
+    scheduleRenderToken++;
+    if (t) t.innerHTML = '';
+    if (wrap) wrap.style.display = 'none';
+    if (status) status.textContent = statusText;
   }
 
   function oneKey(row) {
@@ -4532,6 +4769,7 @@ const FeedbackApp = (function() {
           const dupCount = removeDuplicatesDaily();
           
           this.clearUnfeedTable();
+          await this.showLatestSchedule(false);
           showToast(`导入成功 ✅ 共 ${data.length} 行数据，已删除 ${dupCount} 条重复项`, 'success');
           TeacherListApp.syncFromImport(head, data);
         } catch (err) {
@@ -4576,6 +4814,7 @@ const FeedbackApp = (function() {
           const cleanCount = this.autoOneKeyClean();
           
           this.clearUnfeedTable();
+          await this.showLatestSchedule(false);
           showToast(`导入成功 ✅ 共 ${data.length} 行，删除${dupCount}重复、过滤${feedCount}已反馈、清理${cleanCount}条`, 'success');
           TeacherListApp.syncFromImport(head, data);
         } catch (err) {
@@ -5018,6 +5257,20 @@ const FeedbackApp = (function() {
       unfeedRows = [];
     },
 
+    showLatestSchedule: async function(showNotice = true) {
+      if (!head?.length || data.length === 0) {
+        return showToast('请先导入数据', 'error');
+      }
+
+      const wrap = document.getElementById('feedbackScheduleWrap');
+      const status = document.getElementById('feedbackScheduleStatus');
+      const latestTable = sortDataByTimeAndDate([head, ...data]);
+      await renderTable(latestTable);
+      if (wrap) wrap.style.display = '';
+      if (status) status.textContent = `当前最新总表：共 ${latestTable.length - 1} 行`;
+      if (showNotice) showToast(`已显示当前最新总表，共 ${latestTable.length - 1} 行`, 'success');
+    },
+
     exportTable: function() {
       if (!data.length || !head.length) return showToast('没有可导出的数据', 'warning');
       const sortedData = sortDataByTimeAndDate([head, ...data]);
@@ -5160,6 +5413,7 @@ const FeedbackApp = (function() {
         resetFileInput('file3-monthly');
         
         this.clearUnfeedTable();
+        clearLatestSchedule();
         
         container.style.opacity = '1';
         showToast('已重置', 'info');
@@ -5736,11 +5990,16 @@ function mountInlineToolFrames() {
     const key = frame.dataset.toolKey;
     const encoded = INLINE_TOOL_HTML_B64[key];
     if (!encoded) return;
-    if (!inlineToolBlobUrls[key]) {
-      inlineToolBlobUrls[key] = URL.createObjectURL(new Blob([decodeInlineToolHtml(encoded)], { type: 'text/html;charset=utf-8' }));
-    }
+    const html = decodeInlineToolHtml(encoded);
     applyEmbeddedFrameStyle(frame);
-    frame.src = inlineToolBlobUrls[key];
+    if (window.location.protocol === 'file:' && key === 'classroom') {
+      frame.srcdoc = html;
+    } else {
+      if (!inlineToolBlobUrls[key]) {
+        inlineToolBlobUrls[key] = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' }));
+      }
+      frame.src = inlineToolBlobUrls[key];
+    }
     frame.dataset.inlineMounted = 'true';
   });
 }
