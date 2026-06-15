@@ -4016,6 +4016,187 @@ body.home-mode { overflow: hidden; background: #eef2f6 !important; }
     inset -4px -4px 9px rgba(255, 255, 255, 0.84);
 }
 
+.fusion-parent-status-card {
+  position: absolute;
+  right: 50px;
+  top: clamp(570px, calc(100vh - 360px), 600px);
+  width: 252px;
+  height: 198px;
+  z-index: 7;
+  display: grid;
+  grid-template-rows: 78px 110px;
+  gap: 10px;
+  padding: 0 2px;
+  pointer-events: none;
+}
+
+.fusion-parent-status-card .fusion-inline-group {
+  position: relative;
+  isolation: isolate;
+  border-radius: 18px;
+  padding: 8px 9px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(239, 245, 248, 0.82));
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  box-shadow:
+    8px 8px 17px rgba(198, 208, 218, 0.44),
+    -7px -7px 15px rgba(255, 255, 255, 0.76),
+    inset 2px 2px 5px rgba(255, 255, 255, 0.76),
+    inset -2px -2px 5px rgba(174, 188, 202, 0.12);
+  overflow: hidden;
+}
+
+.fusion-parent-status-card .fusion-inline-group::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  z-index: 0;
+  border-radius: 17px;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0) 42%),
+    linear-gradient(160deg, rgba(255, 255, 255, 0.36), rgba(223, 233, 239, 0.18));
+  pointer-events: none;
+}
+
+.fusion-parent-status-card .fusion-inline-title,
+.fusion-parent-status-card .fusion-inline-tasks,
+.fusion-parent-status-card .fusion-inline-recent {
+  position: relative;
+  z-index: 1;
+}
+
+.fusion-parent-status-card .fusion-inline-title {
+  margin: 0;
+  color: #4f6178;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: 0;
+}
+
+.fusion-parent-status-card .fusion-inline-tasks {
+  display: grid;
+  gap: 3px;
+  min-height: 0;
+  grid-auto-rows: minmax(18px, auto);
+}
+
+.fusion-parent-status-card .fusion-inline-task {
+  min-height: 18px;
+  border-radius: 11px;
+  padding: 2px 7px;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  background: rgba(248, 250, 252, 0.9);
+  box-shadow:
+    5px 5px 12px rgba(205, 213, 222, 0.52),
+    -5px -5px 12px rgba(255, 255, 255, 0.76),
+    inset 1px 1px 4px rgba(255, 255, 255, 0.7);
+  position: relative;
+  overflow: hidden;
+}
+
+.fusion-parent-status-card .fusion-inline-task > span:not(.fusion-inline-mark) {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.fusion-parent-status-card .fusion-inline-task::after {
+  content: "已完成";
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  padding: 2px 6px;
+  border: 2px solid rgba(225, 29, 72, 0.72);
+  border-radius: 999px;
+  color: #e11d48;
+  background: rgba(255, 228, 230, 0.82);
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate3d(16px, -50%, 0) rotate(-12deg) scale(1.3);
+}
+
+.fusion-parent-status-card .fusion-inline-task.is-stamped::after {
+  animation: fusionStampPop 820ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.fusion-parent-status-card .fusion-inline-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  color: #8ca0b4;
+  background: #eef3f8;
+  font-size: 9px;
+  font-weight: 900;
+  box-shadow:
+    inset 3px 3px 7px rgba(148, 163, 184, 0.16),
+    inset -3px -3px 7px rgba(255, 255, 255, 0.82);
+}
+
+.fusion-parent-status-card .fusion-inline-task.is-done .fusion-inline-mark {
+  color: #139b72;
+  background: #d9f8ea;
+}
+
+.fusion-parent-status-card .fusion-inline-name {
+  display: block;
+  color: #33445d;
+  font-size: 9px;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fusion-parent-status-card .fusion-inline-state {
+  display: block;
+  margin-top: 0;
+  color: #63738a;
+  font-size: 7px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fusion-parent-status-card .fusion-inline-recent {
+  min-height: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #66768d;
+  font-size: 8px;
+  font-weight: 800;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fusion-parent-status-card .fusion-inline-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+  background: #49d3a4;
+  box-shadow: 0 0 0 3px rgba(73, 211, 164, 0.12);
+}
+
 @media (max-width: 1180px) {
   .fusion-status-pill {
     right: 24px;
@@ -4024,6 +4205,11 @@ body.home-mode { overflow: hidden; background: #eef2f6 !important; }
   .fusion-daily-panel {
     right: 24px;
     width: min(300px, calc(100vw - 48px));
+  }
+
+  .fusion-parent-status-card {
+    right: 24px;
+    width: min(252px, calc(100vw - 48px));
   }
 }
 
@@ -4038,6 +4224,10 @@ body.home-mode { overflow: hidden; background: #eef2f6 !important; }
 
   .fusion-daily-panel {
     display: none;
+  }
+
+  .fusion-parent-status-card {
+    display: none !important;
   }
 }
 /* === FIGMA BUILT HOME END === */
@@ -7174,8 +7364,8 @@ document.addEventListener('DOMContentLoaded', function() {
         margin: 0;
         z-index: 3;
         display: grid;
-        grid-template-rows: minmax(58px, 0.92fr) minmax(76px, 1.08fr);
-        gap: clamp(6px, calc(var(--fusion-gap-height, 150px) * 0.06), 12px);
+        grid-template-rows: minmax(64px, 0.9fr) minmax(88px, 1.1fr);
+        gap: clamp(6px, calc(var(--fusion-gap-height, 190px) * 0.04), 10px);
         padding: 2px;
         box-sizing: border-box;
         overflow: visible;
@@ -7184,11 +7374,11 @@ document.addEventListener('DOMContentLoaded', function() {
         position: relative;
         isolation: isolate;
         border-radius: 22px;
-        padding: clamp(6px, calc(var(--fusion-gap-height, 150px) * 0.055), 10px);
+        padding: clamp(5px, calc(var(--fusion-gap-height, 190px) * 0.04), 8px);
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        gap: clamp(3px, calc(var(--fusion-gap-height, 150px) * 0.026), 6px);
+        gap: clamp(2px, calc(var(--fusion-gap-height, 190px) * 0.02), 5px);
         background:
           linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(239, 245, 248, 0.8));
         background-clip: padding-box;
@@ -7220,24 +7410,25 @@ document.addEventListener('DOMContentLoaded', function() {
       .fusion-inline-title {
         margin: 0;
         color: #4f6178;
-        font-size: clamp(10px, calc(var(--fusion-gap-height, 150px) * 0.072), 12px);
+        font-size: clamp(9px, calc(var(--fusion-gap-height, 190px) * 0.058), 11px);
         font-weight: 900;
         letter-spacing: 0;
       }
       .fusion-inline-tasks {
         display: grid;
-        gap: clamp(3px, calc(var(--fusion-gap-height, 150px) * 0.026), 5px);
+        gap: clamp(2px, calc(var(--fusion-gap-height, 190px) * 0.018), 4px);
         flex: 1 1 auto;
         min-height: 0;
+        grid-auto-rows: minmax(16px, auto);
       }
       .fusion-inline-task {
-        min-height: 0;
+        min-height: 16px;
         border-radius: 13px;
-        padding: clamp(3px, calc(var(--fusion-gap-height, 150px) * 0.028), 5px) 8px;
+        padding: 2px 8px;
         display: grid;
-        grid-template-columns: 18px minmax(0, 1fr);
+        grid-template-columns: 16px minmax(0, 1fr);
         align-items: center;
-        gap: 7px;
+        gap: 6px;
         background: rgba(248, 250, 252, 0.9);
         box-shadow:
           5px 5px 12px rgba(205, 213, 222, 0.52),
@@ -7248,6 +7439,13 @@ document.addEventListener('DOMContentLoaded', function() {
         overflow: hidden;
         cursor: default;
         transition: transform .18s ease, outline-color .18s ease;
+      }
+      .fusion-inline-task > span:not(.fusion-inline-mark) {
+        min-width: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 6px;
       }
       .fusion-inline-task::after {
         content: "已完成";
@@ -7301,14 +7499,14 @@ document.addEventListener('DOMContentLoaded', function() {
         outline-color: rgba(73, 211, 164, 0.66);
       }
       .fusion-inline-mark {
-        width: 18px;
-        height: 18px;
+        width: 16px;
+        height: 16px;
         border-radius: 999px;
         display: grid;
         place-items: center;
         color: #8ca0b4;
         background: #eef3f8;
-        font-size: 11px;
+        font-size: 10px;
         font-weight: 900;
         box-shadow:
           inset 3px 3px 7px rgba(148, 163, 184, 0.16),
@@ -7319,43 +7517,45 @@ document.addEventListener('DOMContentLoaded', function() {
         background: #d9f8ea;
       }
       .fusion-inline-name {
+        display: block;
         color: #33445d;
-        font-size: clamp(9px, calc(var(--fusion-gap-height, 150px) * 0.066), 11px);
+        font-size: clamp(8px, calc(var(--fusion-gap-height, 190px) * 0.052), 10px);
         font-weight: 900;
-        line-height: 1.16;
+        line-height: 1;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
       .fusion-inline-state {
-        margin-top: 1px;
+        display: block;
+        margin-top: 0;
         color: #63738a;
-        font-size: clamp(8px, calc(var(--fusion-gap-height, 150px) * 0.058), 10px);
+        font-size: clamp(7px, calc(var(--fusion-gap-height, 190px) * 0.04), 8px);
         font-weight: 800;
-        line-height: 1.12;
+        line-height: 1;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
       .fusion-inline-recent {
-        min-height: 12px;
+        min-height: 10px;
         display: flex;
         align-items: center;
         gap: 8px;
         color: #66768d;
-        font-size: clamp(8px, calc(var(--fusion-gap-height, 150px) * 0.056), 10px);
+        font-size: clamp(7px, calc(var(--fusion-gap-height, 190px) * 0.046), 9px);
         font-weight: 800;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
       .fusion-inline-group[data-fusion-period="month"] .fusion-inline-task {
-        grid-template-columns: 18px minmax(0, 1fr);
+        grid-template-columns: 16px minmax(0, 1fr);
       }
       .fusion-inline-group[data-fusion-period="month"] .fusion-inline-mark {
-        width: 18px;
-        height: 18px;
-        font-size: 11px;
+        width: 16px;
+        height: 16px;
+        font-size: 10px;
       }
       .fusion-inline-dot {
         width: 9px;
@@ -7369,36 +7569,37 @@ document.addEventListener('DOMContentLoaded', function() {
         display: none;
       }
       .fusion-inline-card.is-tight {
-        grid-template-rows: minmax(48px, 0.9fr) minmax(62px, 1.1fr);
-        gap: 5px;
+        grid-template-rows: minmax(58px, 0.9fr) minmax(82px, 1.1fr);
+        gap: 6px;
       }
       .fusion-inline-card.is-tight .fusion-inline-group {
         padding: 5px 7px;
         border-radius: 18px;
-        gap: 2px;
+        gap: 3px;
       }
       .fusion-inline-card.is-tight .fusion-inline-title {
         font-size: 9px;
       }
       .fusion-inline-card.is-tight .fusion-inline-task {
-        padding: 3px 7px;
-        grid-template-columns: 14px minmax(0, 1fr);
+        min-height: 16px;
+        padding: 2px 7px;
+        grid-template-columns: 13px minmax(0, 1fr);
         gap: 5px;
         border-radius: 11px;
       }
       .fusion-inline-card.is-tight .fusion-inline-mark {
-        width: 14px;
-        height: 14px;
-        font-size: 9px;
+        width: 13px;
+        height: 13px;
+        font-size: 8px;
       }
       .fusion-inline-card.is-tight .fusion-inline-name {
-        font-size: 9px;
-        line-height: 1.05;
+        font-size: 8px;
+        line-height: 1;
       }
       .fusion-inline-card.is-tight .fusion-inline-state,
       .fusion-inline-card.is-tight .fusion-inline-recent {
-        font-size: 8px;
-        line-height: 1.05;
+        font-size: 7px;
+        line-height: 1;
       }
       .fusion-inline-card.is-tight .fusion-inline-recent {
         min-height: 9px;
@@ -7408,6 +7609,49 @@ document.addEventListener('DOMContentLoaded', function() {
         width: 7px;
         height: 7px;
         box-shadow: 0 0 0 3px rgba(73, 211, 164, 0.12);
+      }
+      .fusion-inline-card.is-mini {
+        grid-template-rows: minmax(42px, 0.85fr) minmax(58px, 1.15fr);
+        gap: 4px;
+        padding: 1px;
+      }
+      .fusion-inline-card.is-mini .fusion-inline-group {
+        padding: 4px 6px;
+        border-radius: 16px;
+        gap: 2px;
+      }
+      .fusion-inline-card.is-mini .fusion-inline-title {
+        font-size: 8px;
+        line-height: 1;
+      }
+      .fusion-inline-card.is-mini .fusion-inline-tasks {
+        gap: 2px;
+        grid-auto-rows: minmax(12px, auto);
+      }
+      .fusion-inline-card.is-mini .fusion-inline-task,
+      .fusion-inline-card.is-mini .fusion-inline-group[data-fusion-period="month"] .fusion-inline-task {
+        min-height: 12px;
+        padding: 1px 5px;
+        grid-template-columns: 9px minmax(0, 1fr);
+        gap: 4px;
+        border-radius: 9px;
+      }
+      .fusion-inline-card.is-mini .fusion-inline-mark,
+      .fusion-inline-card.is-mini .fusion-inline-group[data-fusion-period="month"] .fusion-inline-mark {
+        width: 9px;
+        height: 9px;
+        font-size: 7px;
+      }
+      .fusion-inline-card.is-mini .fusion-inline-task > span:not(.fusion-inline-mark) {
+        display: block;
+      }
+      .fusion-inline-card.is-mini .fusion-inline-name {
+        font-size: 7px;
+        line-height: 1;
+      }
+      .fusion-inline-card.is-mini .fusion-inline-state,
+      .fusion-inline-card.is-mini .fusion-inline-recent {
+        display: none;
       }
     `;
     doc.head.appendChild(style);
@@ -7484,6 +7728,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!measuredGap || !measuredGap.panel) {
       const fallbackPanel = findFusionRightPanel(doc);
       if (!fallbackPanel) return;
+      const nextLayoutKey = 'fallback|360|190';
+      if (targetCard.dataset.fusionInlineLayoutKey === nextLayoutKey && targetCard.parentNode === fallbackPanel) {
+        return;
+      }
       if (targetCard.parentNode !== fallbackPanel) {
         fallbackPanel.appendChild(targetCard);
       }
@@ -7493,17 +7741,26 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       targetCard.style.display = 'grid';
       targetCard.classList.add('is-tight');
+      targetCard.classList.remove('is-mini');
       targetCard.style.setProperty('--fusion-gap-top', '360px');
-      targetCard.style.setProperty('--fusion-gap-height', '118px');
+      targetCard.style.setProperty('--fusion-gap-height', '190px');
+      targetCard.dataset.fusionInlineLayoutKey = nextLayoutKey;
+      return;
+    }
+    const layoutMode = measuredGap.height < 170 ? 'mini' : (measuredGap.height < 205 ? 'tight' : 'wide');
+    const nextLayoutKey = 'panel|' + measuredGap.top + '|' + measuredGap.height + '|' + layoutMode;
+    if (targetCard.dataset.fusionInlineLayoutKey === nextLayoutKey && targetCard.parentNode === measuredGap.panel) {
       return;
     }
     if (targetCard.parentNode !== measuredGap.panel) {
       measuredGap.panel.appendChild(targetCard);
     }
     targetCard.style.display = 'grid';
-    targetCard.classList.toggle('is-tight', measuredGap.height < 112);
+    targetCard.classList.toggle('is-tight', layoutMode !== 'wide');
+    targetCard.classList.toggle('is-mini', layoutMode === 'mini');
     targetCard.style.setProperty('--fusion-gap-top', measuredGap.top + 'px');
     targetCard.style.setProperty('--fusion-gap-height', measuredGap.height + 'px');
+    targetCard.dataset.fusionInlineLayoutKey = nextLayoutKey;
   }
 
   function getFusionTaskGroup(toolKey) {
@@ -7524,17 +7781,24 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function stampFusionTool(toolKey) {
     const doc = getFigmaHomeDocument();
-    if (!doc) return;
-    const card = doc.getElementById('fusionInlineDailyCard');
-    const item = card ? card.querySelector('[data-fusion-tool="' + toolKey + '"]') : null;
-    playFusionStamp(item);
+    const iframeCard = doc ? doc.getElementById('fusionInlineDailyCard') : null;
+    const iframeItem = iframeCard ? iframeCard.querySelector('[data-fusion-tool="' + toolKey + '"]') : null;
+    const parentCard = document.getElementById('fusionParentStatusCard');
+    const parentItem = parentCard ? parentCard.querySelector('[data-fusion-tool="' + toolKey + '"]') : null;
+    playFusionStamp(iframeItem);
+    playFusionStamp(parentItem);
   }
 
   function createInlineFusionCard(doc) {
     const card = doc.createElement('div');
     card.id = 'fusionInlineDailyCard';
     card.className = 'fusion-inline-card';
-    card.innerHTML = `
+    card.innerHTML = createFusionStatusMarkup('fusionInlineRecent', 'fusionInlineMonthlyRecent');
+    return card;
+  }
+
+  function createFusionStatusMarkup(dayRecentId, monthRecentId) {
+    return `
       <div class="fusion-inline-group" data-fusion-period="day">
         <h4 class="fusion-inline-title">每日任务状态</h4>
         <div class="fusion-inline-tasks">
@@ -7553,7 +7817,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </span>
           </div>
         </div>
-        <div class="fusion-inline-recent" id="fusionInlineRecent">
+        <div class="fusion-inline-recent" id="${dayRecentId}">
           <span class="fusion-inline-dot" aria-hidden="true"></span>
           <span>暂无文件</span>
         </div>
@@ -7583,31 +7847,53 @@ document.addEventListener('DOMContentLoaded', function() {
             </span>
           </div>
         </div>
-        <div class="fusion-inline-recent" id="fusionInlineMonthlyRecent">
+        <div class="fusion-inline-recent" id="${monthRecentId}">
           <span class="fusion-inline-dot" aria-hidden="true"></span>
           <span>暂无文件</span>
         </div>
       </div>
     `;
+  }
+
+  function ensureParentFusionStatusCard(showFallback) {
+    let card = document.getElementById('fusionParentStatusCard');
+    const home = document.getElementById('page-home');
+    if (!card) {
+      card = document.createElement('div');
+      card.id = 'fusionParentStatusCard';
+      card.className = 'fusion-parent-status-card';
+      card.innerHTML = createFusionStatusMarkup('fusionParentInlineRecent', 'fusionParentInlineMonthlyRecent');
+      if (home) home.appendChild(card);
+    }
+    card.style.display = showFallback ? 'grid' : 'none';
     return card;
   }
 
   function ensureInlineFusionCard() {
     if (!isFigmaHomeActive()) return null;
     const doc = getFigmaHomeDocument();
-    if (!doc || !doc.body) return null;
+    if (!doc || !doc.body) {
+      ensureParentFusionStatusCard(true);
+      return null;
+    }
     ensureInlineFusionStyles(doc);
+    installFusionInlineLayoutWatch(doc);
     let card = doc.getElementById('fusionInlineDailyCard');
     if (card) {
       syncFusionInlineCardSize(doc, card);
+      ensureParentFusionStatusCard(false);
       return card;
     }
     const measuredGap = measureFusionInlineGap(doc);
     const fallbackPanel = measuredGap && measuredGap.panel ? measuredGap.panel : findFusionRightPanel(doc);
-    if (!fallbackPanel) return null;
+    if (!fallbackPanel) {
+      ensureParentFusionStatusCard(true);
+      return null;
+    }
     card = createInlineFusionCard(doc);
     fallbackPanel.appendChild(card);
     syncFusionInlineCardSize(doc, card);
+    ensureParentFusionStatusCard(false);
     return card;
   }
 
@@ -7618,6 +7904,7 @@ document.addEventListener('DOMContentLoaded', function() {
     doc.body.dataset.fusionInlineObserver = 'true';
     let queued = false;
     let missingCount = 0;
+    let syncedOnce = false;
     const observer = new MutationObserver(function() {
       if (queued) return;
       queued = true;
@@ -7629,17 +7916,22 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const card = doc.getElementById('fusionInlineDailyCard');
         if (card) {
-          syncFusionInlineCardSize(doc, card);
+          if (!syncedOnce) {
+            syncFusionInlineCardSize(doc, card);
+            syncedOnce = true;
+          }
+          observer.disconnect();
           return;
         }
         missingCount += 1;
         const mountedCard = ensureInlineFusionCard();
         if (mountedCard) {
+          syncedOnce = true;
           observer.disconnect();
           updateFusionHomeWidgets();
           return;
         }
-        if (missingCount > 40) observer.disconnect();
+        if (missingCount > 12) observer.disconnect();
       };
       if (doc.defaultView && typeof doc.defaultView.requestAnimationFrame === 'function') {
         doc.defaultView.requestAnimationFrame(run);
@@ -7650,11 +7942,83 @@ document.addEventListener('DOMContentLoaded', function() {
     observer.observe(doc.body, { childList: true, subtree: true });
   }
 
+  function refreshFusionInlineLayoutSoon() {
+    const doc = getFigmaHomeDocument();
+    if (!doc) return;
+    const card = doc.getElementById('fusionInlineDailyCard');
+    if (!card) return;
+    if (doc.defaultView && typeof doc.defaultView.requestAnimationFrame === 'function') {
+      doc.defaultView.requestAnimationFrame(function() {
+        syncFusionInlineCardSize(doc, card);
+      });
+    } else {
+      setTimeout(function() {
+        syncFusionInlineCardSize(doc, card);
+      }, 60);
+    }
+  }
+
+  function installFusionInlineLayoutWatch(doc) {
+    if (!doc || !doc.body || doc.body.dataset.fusionInlineLayoutWatch === 'true') return;
+    doc.body.dataset.fusionInlineLayoutWatch = 'true';
+    const view = doc.defaultView || window;
+    const state = {
+      timer: 0,
+      resizeObserver: null,
+      observedGrid: null,
+      observedTodo: null
+    };
+
+    const schedule = function(delay) {
+      clearTimeout(state.timer);
+      state.timer = view.setTimeout(function() {
+        if (!isFigmaHomeActive()) return;
+        const card = doc.getElementById('fusionInlineDailyCard');
+        if (!card) return;
+        bindTargets();
+        syncFusionInlineCardSize(doc, card);
+      }, delay || 90);
+    };
+
+    const bindTargets = function() {
+      if (!state.resizeObserver) return;
+      const grid = findFusionCalendarDateGrid(doc);
+      const todo = findTodayTodoCard(doc);
+      if (grid && grid !== state.observedGrid) {
+        state.resizeObserver.observe(grid);
+        state.observedGrid = grid;
+      }
+      if (todo && todo !== state.observedTodo) {
+        state.resizeObserver.observe(todo);
+        state.observedTodo = todo;
+      }
+    };
+
+    if (view.ResizeObserver) {
+      state.resizeObserver = new view.ResizeObserver(function() {
+        schedule(80);
+      });
+      bindTargets();
+    }
+
+    doc.addEventListener('click', function(event) {
+      const target = event.target;
+      if (!target || !target.closest || !target.closest('button')) return;
+      schedule(160);
+      view.setTimeout(function() {
+        schedule(0);
+      }, 420);
+    }, true);
+
+    schedule(120);
+  }
+
   function updateFusionHomeWidgets() {
     if (!isFigmaHomeActive()) return;
     const inlineCard = ensureInlineFusionCard();
     const doc = getFigmaHomeDocument();
     if (doc) syncFusionInlineCardSize(doc, inlineCard);
+    const parentCard = ensureParentFusionStatusCard(!inlineCard);
     const status = readDailyStatus();
     const monthlyStatus = readMonthlyStatus();
     const meta = getFusionMeta();
@@ -7666,7 +8030,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (titleNode) titleNode.textContent = title;
     if (metaNode) metaNode.textContent = '每日模块 ' + doneCount + '/2';
 
-    const fusionItems = inlineCard ? inlineCard.querySelectorAll('[data-fusion-tool]') : document.querySelectorAll('[data-fusion-tool]');
+    const fusionItems = [
+      ...(inlineCard ? Array.from(inlineCard.querySelectorAll('[data-fusion-tool]')) : []),
+      ...(parentCard ? Array.from(parentCard.querySelectorAll('[data-fusion-tool]')) : [])
+    ];
     fusionItems.forEach(item => {
       const toolKey = item.dataset.fusionTool;
       const group = getFusionTaskGroup(toolKey);
@@ -7689,6 +8056,18 @@ document.addEventListener('DOMContentLoaded', function() {
     if (inlineMonthlyRecent) {
       const monthRecent = meta.recent.find(item => getFusionTaskGroup(item.toolKey) === 'month');
       inlineMonthlyRecent.textContent = monthRecent ? (monthRecent.time + ' · ' + monthRecent.name + ' · ' + monthRecent.file) : '暂无文件';
+    }
+
+    const parentRecent = parentCard ? parentCard.querySelector('#fusionParentInlineRecent span:last-child') : null;
+    if (parentRecent) {
+      const dayRecent = meta.recent.find(item => getFusionTaskGroup(item.toolKey) === 'day');
+      parentRecent.textContent = dayRecent ? (dayRecent.time + ' · ' + dayRecent.name + ' · ' + dayRecent.file) : '暂无文件';
+    }
+
+    const parentMonthlyRecent = parentCard ? parentCard.querySelector('#fusionParentInlineMonthlyRecent span:last-child') : null;
+    if (parentMonthlyRecent) {
+      const monthRecent = meta.recent.find(item => getFusionTaskGroup(item.toolKey) === 'month');
+      parentMonthlyRecent.textContent = monthRecent ? (monthRecent.time + ' · ' + monthRecent.name + ' · ' + monthRecent.file) : '暂无文件';
     }
 
     const rows = document.getElementById('fusionRecentRows');
@@ -7851,25 +8230,35 @@ document.addEventListener('DOMContentLoaded', function() {
     installDailyTodoImportWatchers();
     installNativeModuleImportWatchers();
     setTimeout(installFusionHomeWidgets, 100);
-    setTimeout(installFusionHomeWidgets, 350);
-    setTimeout(installFusionHomeWidgets, 900);
-    setTimeout(installFusionHomeWidgets, 1800);
     setTimeout(installDailyTodoImportWatchers, 500);
-    setTimeout(installDailyTodoImportWatchers, 1500);
+    let fusionInlineResizeTimer = 0;
     window.addEventListener('resize', function() {
       if (!isFigmaHomeActive()) return;
-      const doc = getFigmaHomeDocument();
-      if (doc) syncFusionInlineCardSize(doc);
+      clearTimeout(fusionInlineResizeTimer);
+      fusionInlineResizeTimer = setTimeout(function() {
+        if (!isFigmaHomeActive()) return;
+        const doc = getFigmaHomeDocument();
+        if (doc) syncFusionInlineCardSize(doc);
+      }, 80);
     });
     const frame = document.getElementById('figmaBuiltHomeFrame');
     if (frame && frame.dataset.fusionInlineHooked !== 'true') {
       frame.dataset.fusionInlineHooked = 'true';
       frame.addEventListener('load', function() {
-        setTimeout(installFusionHomeWidgets, 50);
-        setTimeout(installFusionHomeWidgets, 250);
-        setTimeout(watchInlineFusionMount, 300);
+        setTimeout(installFusionHomeWidgets, 80);
+        setTimeout(watchInlineFusionMount, 180);
       });
     }
+    let fusionMonthRefreshTimer = 0;
+    window.addEventListener('message', function(event) {
+      const data = event.data || {};
+      if (data.type !== 'figma-home:month-changed' && data.type !== 'edu-tools:home-layout-changed') return;
+      clearTimeout(fusionMonthRefreshTimer);
+      fusionMonthRefreshTimer = setTimeout(function() {
+        if (!isFigmaHomeActive()) return;
+        refreshFusionInlineLayoutSoon();
+      }, 90);
+    });
   }
 
   if (document.readyState === 'loading') {
