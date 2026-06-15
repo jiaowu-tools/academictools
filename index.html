@@ -7357,15 +7357,18 @@ document.addEventListener('DOMContentLoaded', function() {
     style.textContent = `
       .fusion-inline-card {
         position: absolute;
-        left: 24px;
-        right: 24px;
-        top: calc(var(--fusion-gap-top, 320px) + 2px);
-        height: calc(var(--fusion-gap-height, 150px) - 4px);
+        left: 26px;
+        right: 26px;
+        --fusion-inline-top-space: clamp(10px, calc(var(--fusion-gap-height, 190px) * 0.075), 16px);
+        --fusion-inline-vertical-cut: clamp(22px, calc(var(--fusion-gap-height, 190px) * 0.16), 34px);
+        top: calc(var(--fusion-gap-top, 320px) + var(--fusion-inline-top-space));
+        height: calc(var(--fusion-gap-height, 150px) - var(--fusion-inline-vertical-cut));
         margin: 0;
         z-index: 3;
         display: grid;
-        grid-template-rows: minmax(64px, 0.9fr) minmax(88px, 1.1fr);
-        gap: clamp(6px, calc(var(--fusion-gap-height, 190px) * 0.04), 10px);
+        grid-template-rows: auto auto;
+        align-content: center;
+        gap: clamp(9px, calc(var(--fusion-gap-height, 190px) * 0.05), 12px);
         padding: 2px;
         box-sizing: border-box;
         overflow: visible;
@@ -7373,21 +7376,20 @@ document.addEventListener('DOMContentLoaded', function() {
       .fusion-inline-group {
         position: relative;
         isolation: isolate;
-        border-radius: 22px;
-        padding: clamp(5px, calc(var(--fusion-gap-height, 190px) * 0.04), 8px);
+        border-radius: 20px;
+        padding: clamp(8px, calc(var(--fusion-gap-height, 190px) * 0.045), 10px) 12px;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
-        gap: clamp(2px, calc(var(--fusion-gap-height, 190px) * 0.02), 5px);
+        justify-content: center;
+        gap: clamp(5px, calc(var(--fusion-gap-height, 190px) * 0.024), 7px);
         background:
-          linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(239, 245, 248, 0.8));
+          linear-gradient(145deg, rgba(255, 255, 255, 0.62), rgba(239, 245, 248, 0.64));
         background-clip: padding-box;
-        border: 1px solid rgba(255, 255, 255, 0.84);
+        border: 1px solid rgba(255, 255, 255, 0.68);
         box-shadow:
-          8px 8px 17px rgba(198, 208, 218, 0.44),
-          -7px -7px 15px rgba(255, 255, 255, 0.76),
-          inset 2px 2px 5px rgba(255, 255, 255, 0.76),
-          inset -2px -2px 5px rgba(174, 188, 202, 0.12);
+          6px 6px 14px rgba(198, 208, 218, 0.32),
+          -6px -6px 14px rgba(255, 255, 255, 0.62),
+          inset 1px 1px 4px rgba(255, 255, 255, 0.62);
         overflow: hidden;
       }
       .fusion-inline-group::before {
@@ -7395,7 +7397,7 @@ document.addEventListener('DOMContentLoaded', function() {
         position: absolute;
         inset: 1px;
         z-index: 0;
-        border-radius: 22px;
+        border-radius: 19px;
         background:
           radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0) 42%),
           linear-gradient(160deg, rgba(255, 255, 255, 0.36), rgba(223, 233, 239, 0.18));
@@ -7409,31 +7411,28 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       .fusion-inline-title {
         margin: 0;
-        color: #4f6178;
-        font-size: clamp(9px, calc(var(--fusion-gap-height, 190px) * 0.058), 11px);
+        color: #56667b;
+        font-size: clamp(9px, calc(var(--fusion-gap-height, 190px) * 0.052), 10px);
         font-weight: 900;
         letter-spacing: 0;
       }
       .fusion-inline-tasks {
-        display: grid;
-        gap: clamp(2px, calc(var(--fusion-gap-height, 190px) * 0.018), 4px);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px 10px;
         flex: 1 1 auto;
         min-height: 0;
-        grid-auto-rows: minmax(16px, auto);
       }
       .fusion-inline-task {
         min-height: 16px;
-        border-radius: 13px;
-        padding: 2px 8px;
+        border-radius: 999px;
+        padding: 0;
         display: grid;
-        grid-template-columns: 16px minmax(0, 1fr);
+        grid-template-columns: 9px minmax(0, max-content);
         align-items: center;
         gap: 6px;
-        background: rgba(248, 250, 252, 0.9);
-        box-shadow:
-          5px 5px 12px rgba(205, 213, 222, 0.52),
-          -5px -5px 12px rgba(255, 255, 255, 0.76),
-          inset 1px 1px 4px rgba(255, 255, 255, 0.7);
+        background: transparent;
+        box-shadow: none;
         outline: 2px solid transparent;
         position: relative;
         overflow: hidden;
@@ -7442,10 +7441,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       .fusion-inline-task > span:not(.fusion-inline-mark) {
         min-width: 0;
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        align-items: center;
-        gap: 6px;
+        display: block;
       }
       .fusion-inline-task::after {
         content: "已完成";
@@ -7499,67 +7495,60 @@ document.addEventListener('DOMContentLoaded', function() {
         outline-color: rgba(73, 211, 164, 0.66);
       }
       .fusion-inline-mark {
-        width: 16px;
-        height: 16px;
+        width: 9px;
+        height: 9px;
         border-radius: 999px;
         display: grid;
         place-items: center;
         color: #8ca0b4;
         background: #eef3f8;
-        font-size: 10px;
+        font-size: 0;
         font-weight: 900;
-        box-shadow:
-          inset 3px 3px 7px rgba(148, 163, 184, 0.16),
-          inset -3px -3px 7px rgba(255, 255, 255, 0.82);
+        box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.1);
       }
       .fusion-inline-task.is-done .fusion-inline-mark {
-        color: #139b72;
         background: #d9f8ea;
+        box-shadow: 0 0 0 4px rgba(73, 211, 164, 0.14);
       }
       .fusion-inline-name {
         display: block;
-        color: #33445d;
-        font-size: clamp(8px, calc(var(--fusion-gap-height, 190px) * 0.052), 10px);
-        font-weight: 900;
+        color: #617189;
+        font-size: clamp(8px, calc(var(--fusion-gap-height, 190px) * 0.047), 9px);
+        font-weight: 800;
         line-height: 1;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
       .fusion-inline-state {
-        display: block;
-        margin-top: 0;
-        color: #63738a;
-        font-size: clamp(7px, calc(var(--fusion-gap-height, 190px) * 0.04), 8px);
-        font-weight: 800;
-        line-height: 1;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        display: none;
       }
       .fusion-inline-recent {
-        min-height: 10px;
+        min-height: 0;
         display: flex;
         align-items: center;
-        gap: 8px;
-        color: #66768d;
-        font-size: clamp(7px, calc(var(--fusion-gap-height, 190px) * 0.046), 9px);
+        gap: 6px;
+        color: #6b7a90;
+        font-size: clamp(7px, calc(var(--fusion-gap-height, 190px) * 0.04), 8px);
         font-weight: 800;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
+      .fusion-inline-recent.is-empty {
+        display: none;
+      }
       .fusion-inline-group[data-fusion-period="month"] .fusion-inline-task {
-        grid-template-columns: 16px minmax(0, 1fr);
+        grid-template-columns: 9px minmax(0, max-content);
       }
       .fusion-inline-group[data-fusion-period="month"] .fusion-inline-mark {
-        width: 16px;
-        height: 16px;
-        font-size: 10px;
-      }
-      .fusion-inline-dot {
         width: 9px;
         height: 9px;
+        font-size: 0;
+      }
+      .fusion-inline-dot {
+        width: 7px;
+        height: 7px;
         border-radius: 999px;
         flex: 0 0 auto;
         background: #49d3a4;
@@ -7568,50 +7557,94 @@ document.addEventListener('DOMContentLoaded', function() {
       .fusion-inline-clear {
         display: none;
       }
+      .fusion-inline-card.is-roomy {
+        left: 22px;
+        right: 22px;
+        --fusion-inline-top-space: clamp(8px, calc(var(--fusion-gap-height, 190px) * 0.065), 14px);
+        --fusion-inline-vertical-cut: clamp(18px, calc(var(--fusion-gap-height, 190px) * 0.13), 30px);
+        gap: clamp(10px, calc(var(--fusion-gap-height, 190px) * 0.055), 14px);
+      }
+      .fusion-inline-card.is-roomy .fusion-inline-group {
+        border-radius: 22px;
+        padding: clamp(9px, calc(var(--fusion-gap-height, 190px) * 0.05), 11px) 13px;
+        gap: clamp(6px, calc(var(--fusion-gap-height, 190px) * 0.028), 8px);
+      }
+      .fusion-inline-card.is-roomy .fusion-inline-group::before {
+        border-radius: 21px;
+      }
+      .fusion-inline-card.is-roomy .fusion-inline-title {
+        font-size: 10px;
+      }
+      .fusion-inline-card.is-roomy .fusion-inline-tasks {
+        gap: 6px 12px;
+      }
+      .fusion-inline-card.is-roomy .fusion-inline-task,
+      .fusion-inline-card.is-roomy .fusion-inline-group[data-fusion-period="month"] .fusion-inline-task {
+        min-height: 18px;
+        grid-template-columns: 10px minmax(0, max-content);
+        gap: 7px;
+      }
+      .fusion-inline-card.is-roomy .fusion-inline-mark,
+      .fusion-inline-card.is-roomy .fusion-inline-group[data-fusion-period="month"] .fusion-inline-mark {
+        width: 10px;
+        height: 10px;
+        box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.1);
+      }
+      .fusion-inline-card.is-roomy .fusion-inline-task.is-done .fusion-inline-mark {
+        box-shadow: 0 0 0 4px rgba(73, 211, 164, 0.14);
+      }
+      .fusion-inline-card.is-roomy .fusion-inline-name {
+        font-size: 9px;
+      }
+      .fusion-inline-card.is-roomy .fusion-inline-recent {
+        font-size: 8px;
+      }
       .fusion-inline-card.is-tight {
-        grid-template-rows: minmax(58px, 0.9fr) minmax(82px, 1.1fr);
-        gap: 6px;
+        --fusion-inline-top-space: 6px;
+        --fusion-inline-vertical-cut: 14px;
+        gap: 7px;
       }
       .fusion-inline-card.is-tight .fusion-inline-group {
-        padding: 5px 7px;
-        border-radius: 18px;
+        padding: 6px 9px;
+        border-radius: 17px;
         gap: 3px;
       }
       .fusion-inline-card.is-tight .fusion-inline-title {
-        font-size: 9px;
+        font-size: 8.5px;
       }
       .fusion-inline-card.is-tight .fusion-inline-task {
-        min-height: 16px;
-        padding: 2px 7px;
-        grid-template-columns: 13px minmax(0, 1fr);
+        min-height: 13px;
+        padding: 0;
+        grid-template-columns: 7px minmax(0, max-content);
         gap: 5px;
         border-radius: 11px;
       }
       .fusion-inline-card.is-tight .fusion-inline-mark {
-        width: 13px;
-        height: 13px;
-        font-size: 8px;
+        width: 7px;
+        height: 7px;
+        font-size: 0;
       }
       .fusion-inline-card.is-tight .fusion-inline-name {
-        font-size: 8px;
+        font-size: 7.5px;
         line-height: 1;
       }
       .fusion-inline-card.is-tight .fusion-inline-state,
       .fusion-inline-card.is-tight .fusion-inline-recent {
-        font-size: 7px;
+        font-size: 6.5px;
         line-height: 1;
       }
       .fusion-inline-card.is-tight .fusion-inline-recent {
-        min-height: 9px;
+        min-height: 8px;
         gap: 5px;
       }
       .fusion-inline-card.is-tight .fusion-inline-dot {
-        width: 7px;
-        height: 7px;
+        width: 6px;
+        height: 6px;
         box-shadow: 0 0 0 3px rgba(73, 211, 164, 0.12);
       }
       .fusion-inline-card.is-mini {
-        grid-template-rows: minmax(42px, 0.85fr) minmax(58px, 1.15fr);
+        --fusion-inline-top-space: 4px;
+        --fusion-inline-vertical-cut: 8px;
         gap: 4px;
         padding: 1px;
       }
@@ -7626,20 +7659,20 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       .fusion-inline-card.is-mini .fusion-inline-tasks {
         gap: 2px;
-        grid-auto-rows: minmax(12px, auto);
+        grid-auto-rows: minmax(13px, auto);
       }
       .fusion-inline-card.is-mini .fusion-inline-task,
       .fusion-inline-card.is-mini .fusion-inline-group[data-fusion-period="month"] .fusion-inline-task {
-        min-height: 12px;
+        min-height: 13px;
         padding: 1px 5px;
-        grid-template-columns: 9px minmax(0, 1fr);
+        grid-template-columns: 6px minmax(0, max-content);
         gap: 4px;
         border-radius: 9px;
       }
       .fusion-inline-card.is-mini .fusion-inline-mark,
       .fusion-inline-card.is-mini .fusion-inline-group[data-fusion-period="month"] .fusion-inline-mark {
-        width: 9px;
-        height: 9px;
+        width: 6px;
+        height: 6px;
         font-size: 7px;
       }
       .fusion-inline-card.is-mini .fusion-inline-task > span:not(.fusion-inline-mark) {
@@ -7741,14 +7774,20 @@ document.addEventListener('DOMContentLoaded', function() {
       }
       targetCard.style.display = 'grid';
       targetCard.classList.add('is-tight');
+      targetCard.classList.remove('is-roomy');
       targetCard.classList.remove('is-mini');
       targetCard.style.setProperty('--fusion-gap-top', '360px');
       targetCard.style.setProperty('--fusion-gap-height', '190px');
       targetCard.dataset.fusionInlineLayoutKey = nextLayoutKey;
       return;
     }
-    const layoutMode = measuredGap.height < 170 ? 'mini' : (measuredGap.height < 205 ? 'tight' : 'wide');
-    const nextLayoutKey = 'panel|' + measuredGap.top + '|' + measuredGap.height + '|' + layoutMode;
+    const viewHeight = doc.defaultView && doc.defaultView.innerHeight ? Math.round(doc.defaultView.innerHeight) : 0;
+    const layoutMode = measuredGap.height < 165 || (viewHeight > 0 && viewHeight < 900)
+      ? 'mini'
+      : (measuredGap.height < 195 || (viewHeight > 0 && viewHeight < 935)
+        ? 'tight'
+        : (measuredGap.height >= 215 && (!viewHeight || viewHeight >= 945) ? 'roomy' : 'wide'));
+    const nextLayoutKey = 'panel|' + measuredGap.top + '|' + measuredGap.height + '|' + viewHeight + '|' + layoutMode;
     if (targetCard.dataset.fusionInlineLayoutKey === nextLayoutKey && targetCard.parentNode === measuredGap.panel) {
       return;
     }
@@ -7756,7 +7795,8 @@ document.addEventListener('DOMContentLoaded', function() {
       measuredGap.panel.appendChild(targetCard);
     }
     targetCard.style.display = 'grid';
-    targetCard.classList.toggle('is-tight', layoutMode !== 'wide');
+    targetCard.classList.toggle('is-roomy', layoutMode === 'roomy');
+    targetCard.classList.toggle('is-tight', layoutMode === 'tight' || layoutMode === 'mini');
     targetCard.classList.toggle('is-mini', layoutMode === 'mini');
     targetCard.style.setProperty('--fusion-gap-top', measuredGap.top + 'px');
     targetCard.style.setProperty('--fusion-gap-height', measuredGap.height + 'px');
@@ -8050,24 +8090,32 @@ document.addEventListener('DOMContentLoaded', function() {
     if (inlineRecent) {
       const dayRecent = meta.recent.find(item => getFusionTaskGroup(item.toolKey) === 'day');
       inlineRecent.textContent = dayRecent ? (dayRecent.time + ' · ' + dayRecent.name + ' · ' + dayRecent.file) : '暂无文件';
+      const inlineRecentRow = inlineRecent.closest('.fusion-inline-recent');
+      if (inlineRecentRow) inlineRecentRow.classList.toggle('is-empty', !dayRecent);
     }
 
     const inlineMonthlyRecent = inlineCard ? inlineCard.querySelector('#fusionInlineMonthlyRecent span:last-child') : null;
     if (inlineMonthlyRecent) {
       const monthRecent = meta.recent.find(item => getFusionTaskGroup(item.toolKey) === 'month');
       inlineMonthlyRecent.textContent = monthRecent ? (monthRecent.time + ' · ' + monthRecent.name + ' · ' + monthRecent.file) : '暂无文件';
+      const inlineMonthlyRecentRow = inlineMonthlyRecent.closest('.fusion-inline-recent');
+      if (inlineMonthlyRecentRow) inlineMonthlyRecentRow.classList.toggle('is-empty', !monthRecent);
     }
 
     const parentRecent = parentCard ? parentCard.querySelector('#fusionParentInlineRecent span:last-child') : null;
     if (parentRecent) {
       const dayRecent = meta.recent.find(item => getFusionTaskGroup(item.toolKey) === 'day');
       parentRecent.textContent = dayRecent ? (dayRecent.time + ' · ' + dayRecent.name + ' · ' + dayRecent.file) : '暂无文件';
+      const parentRecentRow = parentRecent.closest('.fusion-inline-recent');
+      if (parentRecentRow) parentRecentRow.classList.toggle('is-empty', !dayRecent);
     }
 
     const parentMonthlyRecent = parentCard ? parentCard.querySelector('#fusionParentInlineMonthlyRecent span:last-child') : null;
     if (parentMonthlyRecent) {
       const monthRecent = meta.recent.find(item => getFusionTaskGroup(item.toolKey) === 'month');
       parentMonthlyRecent.textContent = monthRecent ? (monthRecent.time + ' · ' + monthRecent.name + ' · ' + monthRecent.file) : '暂无文件';
+      const parentMonthlyRecentRow = parentMonthlyRecent.closest('.fusion-inline-recent');
+      if (parentMonthlyRecentRow) parentMonthlyRecentRow.classList.toggle('is-empty', !monthRecent);
     }
 
     const rows = document.getElementById('fusionRecentRows');
