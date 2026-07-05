@@ -4943,33 +4943,45 @@ const FeedbackApp = (function() {
     return allScience.includes(t);
   }
 
-  function filterGroupUnfeedRows(candidateRows) {
-    if (!candidateRows || candidateRows.length === 0) return [];
-    const classNoIdx = head.findIndex(h => h.toString().trim().includes('班号'));
-    const timeIdx = head.findIndex(h => h.toString().trim().includes('起始时间'));
-    const teacherIdx = head.findIndex(h => h.toString().trim().includes('教师'));
+  function getFeedbackCourseKey(row) {
+    const ks = ['班号','科目','教师','上课日期','起始时间','结束时间'];
+    const parts = ks.map(k => {
+      const i = head.findIndex(h => (h + '').trim() === k);
+      return i >= 0 ? (row[i] ?? '').toString().trim() : '';
+    });
+    return parts.every(Boolean) ? parts.join('|') : '';
+  }
+
+  function buildGroupFeedbackMap(sourceRows = data) {
     const feedIdx = head.findIndex(h => h.toString().trim().includes('上课反馈'));
-    if (classNoIdx === -1 || timeIdx === -1 || teacherIdx === -1 || feedIdx === -1) return candidateRows;
-    const groupMap = new Map(), groupKeySet = new Set(), singleClassRows = [];
+    const feedbackMap = new Map();
+    if (feedIdx === -1) return feedbackMap;
+
+    sourceRows.forEach(row => {
+      if (!isGroup(row)) return;
+      const groupKey = getFeedbackCourseKey(row);
+      if (!groupKey) return;
+      if (!feedbackMap.has(groupKey)) feedbackMap.set(groupKey, false);
+      const feedVal = (row[feedIdx] ?? '').toString().trim();
+      if (feedVal !== '未反馈') feedbackMap.set(groupKey, true);
+    });
+    return feedbackMap;
+  }
+
+  function filterGroupUnfeedRows(candidateRows, sourceRows = data) {
+    if (!candidateRows || candidateRows.length === 0) return [];
+    const feedIdx = head.findIndex(h => h.toString().trim().includes('上课反馈'));
+    if (feedIdx === -1) return candidateRows;
+    const groupFeedbackMap = buildGroupFeedbackMap(sourceRows);
+    const validRows = [];
+
     candidateRows.forEach(rowIdx => {
-      const rowData = data[rowIdx];
-      if (!isGroup(rowData)) return singleClassRows.push(rowIdx);
-      const classNo = (rowData[classNoIdx] ?? '').toString().trim();
-      const startTime = (rowData[timeIdx] ?? '').toString().trim();
-      const teacher = (rowData[teacherIdx] ?? '').toString().trim();
-      const groupKey = `${classNo}|${startTime}|${teacher}`;
-      if (!classNo || !startTime || !teacher) return singleClassRows.push(rowIdx);
-      if (!groupMap.has(groupKey)) groupMap.set(groupKey, []);
-      groupMap.get(groupKey).push({ rowIdx, feedVal: (rowData[feedIdx] ?? '').toString().trim() });
-      groupKeySet.add(groupKey);
+      const rowData = sourceRows[rowIdx];
+      if (!rowData || !isGroup(rowData)) return validRows.push(rowIdx);
+      const groupKey = getFeedbackCourseKey(rowData);
+      if (!groupKey || !groupFeedbackMap.get(groupKey)) validRows.push(rowIdx);
     });
-    const validGroupRows = [];
-    groupKeySet.forEach(groupKey => {
-      const groupRows = groupMap.get(groupKey);
-      const hasFeedBack = groupRows.some(item => item.feedVal !== '未反馈');
-      if (!hasFeedBack) groupRows.forEach(item => validGroupRows.push(item.rowIdx));
-    });
-    return [...singleClassRows, ...validGroupRows];
+    return validRows;
   }
 
   function sortDataByTimeAndDate(dataToSort) {
@@ -5204,7 +5216,7 @@ const FeedbackApp = (function() {
   }
 
   function groupKeyMonthly(row) {
-    const ks = ['班级','班号','科目','教师','教室','阶段','校区','班级类型','课程形式','上课日期','起始时间','结束时间','上课反馈','作业情况'];
+    const ks = ['班级','班号','科目','教师','教室','阶段','校区','班级类型','课程形式','上课日期','起始时间','结束时间'];
     return ks.map(k => {
       const i = head.findIndex(h => (h+'').trim() === k);
       return i >= 0 ? row[i] : '';
@@ -5339,6 +5351,20 @@ const FeedbackApp = (function() {
     return dupCount;
   }
 
+  function removeGroupCoursesWithFeedback() {
+    if (!head?.length || data.length === 0) return 0;
+    const groupFeedbackMap = buildGroupFeedbackMap(data);
+    if (groupFeedbackMap.size === 0) return 0;
+
+    const beforeCount = data.length;
+    data = data.filter(row => {
+      if (!isGroup(row)) return true;
+      const groupKey = getFeedbackCourseKey(row);
+      return !groupKey || !groupFeedbackMap.get(groupKey);
+    });
+    return beforeCount - data.length;
+  }
+
   // 私有方法：只保留未反馈数据
   function keepOnlyUnfeed() {
     const feedIdx = head.findIndex(h => h.toString().trim().includes('上课反馈'));
@@ -5431,6 +5457,8 @@ const FeedbackApp = (function() {
           data = json.slice(1);
           const originalCount = data.length;
           
+          // 同课次任一学生已反馈，则整节多人班课不计入未反馈
+          const groupFeedCount = removeGroupCoursesWithFeedback();
           // 查重月度并删除重复项
           const dupCount = removeDuplicatesMonthly();
           // 只保留未反馈数据
@@ -5440,7 +5468,7 @@ const FeedbackApp = (function() {
           
           this.clearUnfeedTable();
           await this.showLatestSchedule(false);
-          showToast(`导入成功 ✅ 共 ${data.length} 行，删除${dupCount}重复、过滤${feedCount}已反馈、清理${cleanCount}条`, 'success');
+          showToast(`导入成功 ✅ 共 ${data.length} 行，整课过滤${groupFeedCount}条、删除${dupCount}重复、过滤${feedCount}已反馈、清理${cleanCount}条`, 'success');
           TeacherListApp.syncFromImport(head, data);
         } catch (err) {
           console.error(err);
@@ -5817,7 +5845,7 @@ const FeedbackApp = (function() {
         if ((filteredData[i][fi] ?? '').trim() === '未反馈') candidateRows.push(i);
       }
       
-      const validRows = filterGroupUnfeedRows(candidateRows);
+      const validRows = filterGroupUnfeedRows(candidateRows, filteredData);
       renderUnfeedTable(validRows);
       
       const removedCount = data.length - filteredData.length;
@@ -5841,7 +5869,7 @@ const FeedbackApp = (function() {
         if (f === '未反馈' && isScienceTeacher(t)) candidateRows.push(i);
       }
       
-      const validRows = filterGroupUnfeedRows(candidateRows);
+      const validRows = filterGroupUnfeedRows(candidateRows, filteredData);
       renderUnfeedTable(validRows);
       
       const removedCount = data.length - filteredData.length;
@@ -5865,7 +5893,7 @@ const FeedbackApp = (function() {
         if (f === '未反馈' && !isScienceTeacher(t)) candidateRows.push(i);
       }
       
-      const validRows = filterGroupUnfeedRows(candidateRows);
+      const validRows = filterGroupUnfeedRows(candidateRows, filteredData);
       renderUnfeedTable(validRows);
       
       const removedCount = data.length - filteredData.length;
@@ -5954,11 +5982,13 @@ const FeedbackApp = (function() {
       if (fi === -1) return showToast('无上课反馈列', 'error');
       
       const out = [head];
+      const candidateRows = [];
       for (let i = 0; i < data.length; i++) {
         if ((data[i][fi] ?? '').trim() === '未反馈') {
-          out.push(data[i]);
+          candidateRows.push(i);
         }
       }
+      filterGroupUnfeedRows(candidateRows).forEach(i => out.push(data[i]));
       
       const sortedOut = sortDataByTimeAndDate(out);
       const ws = XLSX.utils.aoa_to_sheet(sortedOut);
@@ -5978,13 +6008,15 @@ const FeedbackApp = (function() {
       if (fi === -1 || ti === -1) return showToast('缺少列', 'error');
       
       const out = [head];
+      const candidateRows = [];
       for (let i = 0; i < data.length; i++) {
         const f = (data[i][fi] ?? '').trim();
         const t = (data[i][ti] ?? '').trim();
         if (f === '未反馈' && isScienceTeacher(t)) {
-          out.push(data[i]);
+          candidateRows.push(i);
         }
       }
+      filterGroupUnfeedRows(candidateRows).forEach(i => out.push(data[i]));
       
       const sortedOut = sortDataByTimeAndDate(out);
       const ws = XLSX.utils.aoa_to_sheet(sortedOut);
@@ -6004,13 +6036,15 @@ const FeedbackApp = (function() {
       if (fi === -1 || ti === -1) return showToast('缺少列', 'error');
       
       const out = [head];
+      const candidateRows = [];
       for (let i = 0; i < data.length; i++) {
         const f = (data[i][fi] ?? '').trim();
         const t = (data[i][ti] ?? '').trim();
         if (f === '未反馈' && !isScienceTeacher(t)) {
-          out.push(data[i]);
+          candidateRows.push(i);
         }
       }
+      filterGroupUnfeedRows(candidateRows).forEach(i => out.push(data[i]));
       
       const sortedOut = sortDataByTimeAndDate(out);
       const ws = XLSX.utils.aoa_to_sheet(sortedOut);
@@ -6784,15 +6818,25 @@ document.addEventListener('DOMContentLoaded', function() {
   const DAILY_TODO_STORAGE_KEY = 'eduTools.dailyTodo.v1';
   const DAILY_TODO_TOOLS = ['dailyhours', 'classroom'];
   const DAILY_TODO_TABLE = 'daily_work_status';
+  const MONTHLY_TODO_STORAGE_KEY = 'eduTools.monthlyTodo.v1';
+  const MONTHLY_TODO_TOOLS = ['teacher', 'feedback', 'workload'];
+  const MONTHLY_TODO_TABLE = 'monthly_work_status';
   const DAILY_TODO_SUPABASE_URL = 'https://eamaamoiwamnljszpecz.supabase.co';
   const DAILY_TODO_SUPABASE_KEY = 'sb_publishable_j_HmDdF1EPfTAVCcYcHTJw_XZ-UkMEV';
   let dailyTodoClient = null;
   let dailyTodoRealtimeChannel = null;
+  let monthlyTodoRealtimeChannel = null;
   let dailyTodoBroadcastReady = false;
+  let monthlyTodoBroadcastReady = false;
   let dailyTodoLastBroadcast = '';
+  let monthlyTodoLastBroadcast = '';
   let dailyTodoRemoteWarned = false;
+  let monthlyTodoRemoteWarned = false;
   let dailyTodoRemoteFetching = false;
+  let monthlyTodoRemoteFetching = false;
   let dailyTodoCloudPollTimer = null;
+  let monthlyTodoCloudPollTimer = null;
+  let monthlyTodoDocumentWatcherInstalled = false;
 
   function decodeUtf8Base64(base64) {
     const binary = atob(base64);
@@ -6827,7 +6871,83 @@ document.addEventListener('DOMContentLoaded', function() {
       transform: translate(0, -0.5px);
     }
   </style>
-</head>`);
+</head>`).replace('</body>', `
+  <script>
+  (function() {
+    const MONTHLY_STATUS_STORAGE_KEY = 'eduTools.monthlyTodo.v1';
+    const MONTHLY_STATUS_LABELS = {
+      teacher: '兼职老师课表',
+      feedback: '未反馈助手',
+      workload: '教师课时核算'
+    };
+
+    function getMonthKey() {
+      const now = new Date();
+      return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    }
+
+    function normalizeMonthlyStatus(status) {
+      const month = getMonthKey();
+      if (!status || status.month !== month) {
+        return { month, teacher: false, feedback: false, workload: false, completed: false };
+      }
+      const teacher = status.teacher === true;
+      const feedback = status.feedback === true;
+      const workload = status.workload === true;
+      return { month, teacher, feedback, workload, completed: teacher && feedback && workload };
+    }
+
+    function setTaskPillDone(label, done) {
+      const labelNode = Array.from(document.querySelectorAll('span')).find(node => node.textContent.trim() === label);
+      if (!labelNode || !labelNode.parentElement) return false;
+      const marker = labelNode.previousElementSibling;
+      if (!marker) return false;
+      marker.className = done
+        ? 'w-3.5 h-3.5 rounded-full shrink-0 border-2 border-emerald-400 text-emerald-500 bg-white/30 shadow-sm flex items-center justify-center text-[0.65rem] font-black leading-none'
+        : 'w-2.5 h-2.5 rounded-full shrink-0 shadow-sm bg-slate-200';
+      marker.textContent = done ? '√' : '';
+      return true;
+    }
+
+    function renderMonthlyStatus(status) {
+      const normalized = normalizeMonthlyStatus(status);
+      let rendered = true;
+      Object.keys(MONTHLY_STATUS_LABELS).forEach(key => {
+        rendered = setTaskPillDone(MONTHLY_STATUS_LABELS[key], normalized[key]) && rendered;
+      });
+      if (!rendered) {
+        window.setTimeout(() => renderMonthlyStatus(normalized), 120);
+      }
+    }
+
+    function readMonthlyStatus() {
+      try {
+        return normalizeMonthlyStatus(JSON.parse(localStorage.getItem(MONTHLY_STATUS_STORAGE_KEY) || 'null'));
+      } catch (error) {
+        return normalizeMonthlyStatus(null);
+      }
+    }
+
+    window.addEventListener('message', event => {
+      const data = event.data || {};
+      if (data.type === 'edu-tools:monthly-status') {
+        const normalized = normalizeMonthlyStatus(data.status);
+        try {
+          localStorage.setItem(MONTHLY_STATUS_STORAGE_KEY, JSON.stringify(normalized));
+        } catch (error) {}
+        renderMonthlyStatus(normalized);
+      }
+    });
+
+    window.parent?.postMessage({ type: 'edu-tools:monthly-status-ready' }, '*');
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => renderMonthlyStatus(readMonthlyStatus()));
+    } else {
+      renderMonthlyStatus(readMonthlyStatus());
+    }
+  })();
+  <\/script>
+</body>`);
     frame.srcdoc = homeHtml;
     frame.dataset.srcdocLoaded = 'true';
   }
@@ -6837,6 +6957,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     return now.getFullYear() + '-' + month + '-' + day;
+  }
+
+  function getMonthKey() {
+    const now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
   }
 
   function normalizeDailyStatus(status) {
@@ -6849,6 +6974,17 @@ document.addEventListener('DOMContentLoaded', function() {
     return { date: today, dailyhours, classroom, completed: dailyhours && classroom };
   }
 
+  function normalizeMonthlyStatus(status) {
+    const month = getMonthKey();
+    if (!status || status.month !== month) {
+      return { month, teacher: false, feedback: false, workload: false, completed: false };
+    }
+    const teacher = status.teacher === true;
+    const feedback = status.feedback === true;
+    const workload = status.workload === true;
+    return { month, teacher, feedback, workload, completed: teacher && feedback && workload };
+  }
+
   function mergeDailyStatus(base, incoming) {
     const current = normalizeDailyStatus(base);
     const next = normalizeDailyStatus(incoming);
@@ -6856,6 +6992,17 @@ document.addEventListener('DOMContentLoaded', function() {
       date: getTodayKey(),
       dailyhours: current.dailyhours || next.dailyhours,
       classroom: current.classroom || next.classroom
+    });
+  }
+
+  function mergeMonthlyStatus(base, incoming) {
+    const current = normalizeMonthlyStatus(base);
+    const next = normalizeMonthlyStatus(incoming);
+    return normalizeMonthlyStatus({
+      month: getMonthKey(),
+      teacher: current.teacher || next.teacher,
+      feedback: current.feedback || next.feedback,
+      workload: current.workload || next.workload
     });
   }
 
@@ -6867,9 +7014,23 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  function readMonthlyStatus() {
+    try {
+      return normalizeMonthlyStatus(JSON.parse(localStorage.getItem(MONTHLY_TODO_STORAGE_KEY) || 'null'));
+    } catch (error) {
+      return normalizeMonthlyStatus(null);
+    }
+  }
+
   function writeDailyStatus(status) {
     const normalized = normalizeDailyStatus(status);
     localStorage.setItem(DAILY_TODO_STORAGE_KEY, JSON.stringify(normalized));
+    return normalized;
+  }
+
+  function writeMonthlyStatus(status) {
+    const normalized = normalizeMonthlyStatus(status);
+    localStorage.setItem(MONTHLY_TODO_STORAGE_KEY, JSON.stringify(normalized));
     return normalized;
   }
 
@@ -6891,12 +7052,28 @@ document.addEventListener('DOMContentLoaded', function() {
     console.warn('daily todo cloud sync unavailable. Please create daily_work_status table in Supabase.', error);
   }
 
+  function warnMonthlyTodoRemote(error) {
+    if (monthlyTodoRemoteWarned) return;
+    monthlyTodoRemoteWarned = true;
+    console.warn('monthly todo cloud sync unavailable. Please create monthly_work_status table in Supabase.', error);
+  }
+
   function rowToDailyStatus(row) {
     if (!row) return null;
     return normalizeDailyStatus({
       date: row.work_date || row.date,
       dailyhours: row.dailyhours === true,
       classroom: row.classroom === true
+    });
+  }
+
+  function rowToMonthlyStatus(row) {
+    if (!row) return null;
+    return normalizeMonthlyStatus({
+      month: row.work_month || row.month,
+      teacher: row.teacher === true,
+      feedback: row.feedback === true,
+      workload: row.workload === true
     });
   }
 
@@ -6911,9 +7088,27 @@ document.addEventListener('DOMContentLoaded', function() {
     };
   }
 
+  function monthlyStatusToRow(status) {
+    const normalized = normalizeMonthlyStatus(status);
+    return {
+      work_month: normalized.month,
+      teacher: normalized.teacher,
+      feedback: normalized.feedback,
+      workload: normalized.workload,
+      completed: normalized.completed,
+      updated_at: new Date().toISOString()
+    };
+  }
+
   function applyDailyStatusLocally(status) {
     const normalized = writeDailyStatus(status);
     broadcastDailyStatus();
+    return normalized;
+  }
+
+  function applyMonthlyStatusLocally(status) {
+    const normalized = writeMonthlyStatus(status);
+    broadcastMonthlyStatus();
     return normalized;
   }
 
@@ -6972,11 +7167,75 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
+  async function fetchMonthlyStatusFromCloud() {
+    if (monthlyTodoRemoteFetching) return readMonthlyStatus();
+    const client = initDailyTodoClient();
+    if (!client) return readMonthlyStatus();
+    monthlyTodoRemoteFetching = true;
+    try {
+      const { data, error } = await client
+        .from(MONTHLY_TODO_TABLE)
+        .select('work_month,teacher,feedback,workload,completed,updated_at')
+        .eq('work_month', getMonthKey())
+        .maybeSingle();
+      if (error) {
+        warnMonthlyTodoRemote(error);
+        return readMonthlyStatus();
+      }
+      const merged = mergeMonthlyStatus(readMonthlyStatus(), rowToMonthlyStatus(data));
+      return applyMonthlyStatusLocally(merged);
+    } catch (error) {
+      warnMonthlyTodoRemote(error);
+      return readMonthlyStatus();
+    } finally {
+      monthlyTodoRemoteFetching = false;
+    }
+  }
+
+  async function syncMonthlyStatusToCloud(status = readMonthlyStatus()) {
+    const client = initDailyTodoClient();
+    if (!client) return false;
+    const normalized = normalizeMonthlyStatus(status);
+    try {
+      const { data, error: fetchError } = await client
+        .from(MONTHLY_TODO_TABLE)
+        .select('work_month,teacher,feedback,workload,completed,updated_at')
+        .eq('work_month', normalized.month)
+        .maybeSingle();
+      if (fetchError) {
+        warnMonthlyTodoRemote(fetchError);
+        return false;
+      }
+      const merged = mergeMonthlyStatus(normalized, rowToMonthlyStatus(data));
+      applyMonthlyStatusLocally(merged);
+      const { error: upsertError } = await client
+        .from(MONTHLY_TODO_TABLE)
+        .upsert(monthlyStatusToRow(merged), { onConflict: 'work_month' });
+      if (upsertError) {
+        warnMonthlyTodoRemote(upsertError);
+        return false;
+      }
+      return true;
+    } catch (error) {
+      warnMonthlyTodoRemote(error);
+      return false;
+    }
+  }
+
   function applyIncomingDailyStatus(status, shouldEcho = true) {
     const merged = applyDailyStatusLocally(mergeDailyStatus(readDailyStatus(), status));
     if (shouldEcho) {
       syncDailyStatusToCloud(merged);
       broadcastDailyStatusToRealtime(merged);
+    }
+    return merged;
+  }
+
+  function applyIncomingMonthlyStatus(status, shouldEcho = true) {
+    const merged = applyMonthlyStatusLocally(mergeMonthlyStatus(readMonthlyStatus(), status));
+    if (shouldEcho) {
+      syncMonthlyStatusToCloud(merged);
+      broadcastMonthlyStatusToRealtime(merged);
     }
     return merged;
   }
@@ -6999,6 +7258,28 @@ document.addEventListener('DOMContentLoaded', function() {
       return result === 'ok';
     } catch (error) {
       console.warn('daily todo realtime broadcast skipped', error);
+      return false;
+    }
+  }
+
+  async function broadcastMonthlyStatusToRealtime(status = readMonthlyStatus()) {
+    const client = initDailyTodoClient();
+    if (!client) return false;
+    if (!monthlyTodoRealtimeChannel) subscribeMonthlyTodoRealtime();
+    if (!monthlyTodoRealtimeChannel || !monthlyTodoBroadcastReady) return false;
+    try {
+      const normalized = normalizeMonthlyStatus(status);
+      const signature = JSON.stringify(normalized);
+      if (signature === monthlyTodoLastBroadcast) return true;
+      monthlyTodoLastBroadcast = signature;
+      const result = await monthlyTodoRealtimeChannel.send({
+        type: 'broadcast',
+        event: 'monthly-status',
+        payload: normalized
+      });
+      return result === 'ok';
+    } catch (error) {
+      console.warn('monthly todo realtime broadcast skipped', error);
       return false;
     }
   }
@@ -7029,11 +7310,45 @@ document.addEventListener('DOMContentLoaded', function() {
       });
   }
 
+  function subscribeMonthlyTodoRealtime() {
+    const client = initDailyTodoClient();
+    if (!client || monthlyTodoRealtimeChannel) return;
+    monthlyTodoRealtimeChannel = client
+      .channel('monthly-work-status-sync')
+      .on(
+        'broadcast',
+        { event: 'monthly-status' },
+        payload => {
+          const incoming = payload && payload.payload;
+          if (!incoming || incoming.month !== getMonthKey()) return;
+          applyIncomingMonthlyStatus(incoming, false);
+        }
+      )
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') {
+          monthlyTodoBroadcastReady = true;
+          fetchMonthlyStatusFromCloud();
+          broadcastMonthlyStatusToRealtime(readMonthlyStatus());
+        }
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          monthlyTodoBroadcastReady = false;
+        }
+      });
+  }
+
   function broadcastDailyStatus() {
     loadFigmaBuiltHomeFrame();
     const frame = document.getElementById('figmaBuiltHomeFrame');
     if (frame && frame.contentWindow) {
       frame.contentWindow.postMessage({ type: 'edu-tools:daily-status', status: readDailyStatus() }, '*');
+    }
+  }
+
+  function broadcastMonthlyStatus() {
+    loadFigmaBuiltHomeFrame();
+    const frame = document.getElementById('figmaBuiltHomeFrame');
+    if (frame && frame.contentWindow) {
+      frame.contentWindow.postMessage({ type: 'edu-tools:monthly-status', status: readMonthlyStatus() }, '*');
     }
   }
 
@@ -7043,6 +7358,39 @@ document.addEventListener('DOMContentLoaded', function() {
     status[toolKey] = true;
     const normalized = applyDailyStatusLocally(status);
     syncDailyStatusToCloud(normalized).then(() => broadcastDailyStatusToRealtime(readDailyStatus()));
+  }
+
+  function markMonthlyToolComplete(toolKey) {
+    if (!MONTHLY_TODO_TOOLS.includes(toolKey)) return;
+    const status = readMonthlyStatus();
+    status[toolKey] = true;
+    const normalized = applyMonthlyStatusLocally(status);
+    syncMonthlyStatusToCloud(normalized).then(() => broadcastMonthlyStatusToRealtime(readMonthlyStatus()));
+  }
+
+  function getMonthlyToolKeyFromTarget(target) {
+    if (!target || !target.closest) return '';
+    if (target.id === 'file1' || target.closest('#page-teacher')) return 'teacher';
+    if (target.id === 'file3-monthly') return 'feedback';
+    if (target.closest('#page-workload')) return 'workload';
+    return '';
+  }
+
+  function installMonthlyDocumentWatcher() {
+    if (monthlyTodoDocumentWatcherInstalled) return;
+    monthlyTodoDocumentWatcherInstalled = true;
+    document.addEventListener('change', function(event) {
+      const target = event.target;
+      if (!target || !target.matches || !target.matches('input[type="file"]')) return;
+      if (!target.files || target.files.length === 0) return;
+      const toolKey = getMonthlyToolKeyFromTarget(target);
+      if (toolKey) markMonthlyToolComplete(toolKey);
+    }, true);
+    document.addEventListener('drop', function(event) {
+      if (!event.dataTransfer || !event.dataTransfer.files || event.dataTransfer.files.length === 0) return;
+      const toolKey = getMonthlyToolKeyFromTarget(event.target);
+      if (toolKey) markMonthlyToolComplete(toolKey);
+    }, true);
   }
 
   function attachDailyImportWatcher(frame) {
@@ -7074,10 +7422,46 @@ document.addEventListener('DOMContentLoaded', function() {
     install();
   }
 
+  function attachMonthlyImportWatcher(frame) {
+    if (!frame || frame.dataset.monthlyTodoWatcher === 'true') return;
+    const install = function() {
+      try {
+        const doc = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document);
+        const key = frame.dataset.toolKey;
+        if (!doc || !MONTHLY_TODO_TOOLS.includes(key)) return;
+        if (doc.documentElement.dataset.monthlyTodoWatcher === 'true') return;
+        doc.documentElement.dataset.monthlyTodoWatcher = 'true';
+        doc.addEventListener('change', function(event) {
+          const target = event.target;
+          if (target && target.matches && target.matches('input[type="file"]') && target.files && target.files.length > 0) {
+            markMonthlyToolComplete(key);
+          }
+        }, true);
+        doc.addEventListener('drop', function(event) {
+          if (event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+            markMonthlyToolComplete(key);
+          }
+        }, true);
+      } catch (error) {
+        console.warn('monthly todo watcher skipped', error);
+      }
+    };
+    frame.dataset.monthlyTodoWatcher = 'true';
+    frame.addEventListener('load', install);
+    install();
+  }
+
   function installDailyTodoImportWatchers() {
     document.querySelectorAll('.tool-embed-frame[data-tool-key="dailyhours"], .tool-embed-frame[data-tool-key="classroom"]').forEach(attachDailyImportWatcher);
     broadcastDailyStatus();
     fetchDailyStatusFromCloud().then(() => broadcastDailyStatusToRealtime(readDailyStatus()));
+  }
+
+  function installMonthlyTodoImportWatchers() {
+    installMonthlyDocumentWatcher();
+    document.querySelectorAll('.tool-embed-frame[data-tool-key="workload"]').forEach(attachMonthlyImportWatcher);
+    broadcastMonthlyStatus();
+    fetchMonthlyStatusFromCloud().then(() => broadcastMonthlyStatusToRealtime(readMonthlyStatus()));
   }
 
   window.addEventListener('message', function(event) {
@@ -7086,11 +7470,16 @@ document.addEventListener('DOMContentLoaded', function() {
       fetchDailyStatusFromCloud().then(broadcastDailyStatus);
       return;
     }
+    if (data.type === 'edu-tools:monthly-status-ready') {
+      fetchMonthlyStatusFromCloud().then(broadcastMonthlyStatus);
+      return;
+    }
     if (data.type !== 'figma-home:navigate') return;
     const page = data.page;
     if (page && typeof switchPage === 'function' && document.getElementById('page-' + page)) {
       switchPage(page);
       setTimeout(installDailyTodoImportWatchers, 250);
+      setTimeout(installMonthlyTodoImportWatchers, 250);
     }
   });
 
@@ -7102,14 +7491,23 @@ document.addEventListener('DOMContentLoaded', function() {
       history.replaceState(null, '', window.location.pathname + window.location.search);
     }
     applyDailyStatusLocally(readDailyStatus());
+    applyMonthlyStatusLocally(readMonthlyStatus());
     subscribeDailyTodoRealtime();
+    subscribeMonthlyTodoRealtime();
     fetchDailyStatusFromCloud();
+    fetchMonthlyStatusFromCloud();
     if (!dailyTodoCloudPollTimer) {
       dailyTodoCloudPollTimer = setInterval(fetchDailyStatusFromCloud, 30000);
     }
+    if (!monthlyTodoCloudPollTimer) {
+      monthlyTodoCloudPollTimer = setInterval(fetchMonthlyStatusFromCloud, 30000);
+    }
     installDailyTodoImportWatchers();
+    installMonthlyTodoImportWatchers();
     setTimeout(installDailyTodoImportWatchers, 500);
+    setTimeout(installMonthlyTodoImportWatchers, 500);
     setTimeout(installDailyTodoImportWatchers, 1500);
+    setTimeout(installMonthlyTodoImportWatchers, 1500);
   }
 
   if (document.readyState === 'loading') {
