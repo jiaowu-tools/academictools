@@ -3762,9 +3762,21 @@ body.home-mode #toolSwitcher {
 
 .top-tool-switcher.is-open .tool-switch-menu,
 .top-tool-switcher.is-open:hover .tool-switch-menu {
+  top: calc(100% + 12px);
+  left: auto;
+  right: 0;
+  width: min(380px, calc(100vw - 28px));
+  max-height: min(68vh, 560px);
   opacity: 1;
   pointer-events: auto;
+  filter: none;
   transform: translateY(0) scale(1);
+}
+
+.top-tool-switcher:not(.is-open):hover .tool-switch-menu {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-8px) scale(0.98);
 }
 
 @media (max-width: 760px) {
@@ -3930,42 +3942,118 @@ body.home-mode { overflow: hidden; background: #eef2f6 !important; }
   gap: 10px;
   margin-bottom: 18px;
   padding: 12px 14px;
+  border: 1.5px solid rgba(251, 146, 60, 0.26);
   border-radius: 18px;
-  background: rgba(255, 247, 237, 0.74);
+  background: rgba(255, 247, 237, 0.9);
   color: #9a3412;
   font-size: 14px;
   font-weight: 700;
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.82),
+    inset -1px -1px 0 rgba(251, 146, 60, 0.08),
+    0 8px 16px rgba(251, 146, 60, 0.08);
   position: relative;
   z-index: 1;
 }
 
 .student-export-reminder-check input {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   flex: 0 0 auto;
-  accent-color: #fb7185;
+  appearance: none;
+  border: 2px solid rgba(251, 113, 133, 0.72);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow:
+    inset 1px 1px 3px rgba(255, 255, 255, 0.86),
+    0 4px 9px rgba(251, 113, 133, 0.12);
+  display: inline-grid;
+  place-items: center;
+  color: transparent;
+  cursor: pointer;
+}
+
+.student-export-reminder-check input:checked {
+  border-color: #5fcd83;
+  border-radius: 999px;
+  background: #6fd88f;
+  box-shadow:
+    inset 1px 1px 3px rgba(255, 255, 255, 0.5),
+    0 5px 10px rgba(95, 205, 131, 0.18);
+  color: #fff;
+}
+
+.student-export-reminder-check input:checked::after {
+  content: "√";
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+  transform: translate(-0.5px, -1px) scale(1.02);
+  text-shadow:
+    0.35px 0 #fff,
+    -0.35px 0 #fff,
+    0 0.35px #fff,
+    0 -0.35px #fff;
 }
 
 .student-export-reminder-button {
   width: 100%;
-  border: none;
-  border-radius: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.86);
+  border-radius: 999px;
   padding: 14px 18px;
-  background: linear-gradient(135deg, #fb7185, #14b8a6);
-  color: #fff;
+  background:
+    linear-gradient(135deg, #ffdce8 0%, #ffe9c8 55%, #fff5d6 100%),
+    #ffe6ef;
+  color: #9a4963;
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 900;
   cursor: pointer;
-  box-shadow: 0 14px 26px rgba(20, 184, 166, 0.2), 0 8px 16px rgba(251, 113, 133, 0.16);
+  box-shadow:
+    9px 9px 18px rgba(218, 174, 185, 0.22),
+    -7px -7px 16px rgba(255, 255, 255, 0.9),
+    inset 2px 2px 6px rgba(255, 255, 255, 0.78),
+    inset -3px -3px 8px rgba(244, 148, 166, 0.14);
   position: relative;
   z-index: 1;
 }
 
 .student-export-reminder-button:disabled {
   cursor: not-allowed;
-  background: linear-gradient(135deg, #e2e8f0, #cbd5e1);
-  box-shadow: inset 2px 2px 6px rgba(148, 163, 184, 0.26);
+  border-color: rgba(255, 255, 255, 0.78);
+  background: #eef2f6;
+  box-shadow:
+    inset 3px 3px 8px rgba(170, 184, 198, 0.22),
+    inset -3px -3px 8px rgba(255, 255, 255, 0.74);
   color: #64748b;
+}
+
+.student-export-reminder-button[data-student-export-reminder-close]:not(:disabled) {
+  background:
+    linear-gradient(135deg, #e8ffd9 0%, #c7f7cf 58%, #b2efc7 100%),
+    #dcfce7;
+  color: #0f172a;
+  box-shadow:
+    9px 9px 18px rgba(159, 194, 168, 0.22),
+    -7px -7px 16px rgba(255, 255, 255, 0.9),
+    inset 2px 2px 6px rgba(255, 255, 255, 0.78),
+    inset -3px -3px 8px rgba(99, 188, 132, 0.12);
+}
+
+.student-export-reminder-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  position: relative;
+  z-index: 1;
+}
+
+.student-export-reminder-button.is-secondary {
+  background: #f7edff;
+  color: #7c5a9b;
+  box-shadow:
+    inset 0 0 0 1px rgba(196, 181, 253, 0.2),
+    7px 7px 14px rgba(188, 171, 214, 0.14),
+    -6px -6px 14px rgba(255, 255, 255, 0.82);
 }
 
 @media (max-width: 520px) {
@@ -3981,6 +4069,10 @@ body.home-mode { overflow: hidden; background: #eef2f6 !important; }
     max-width: 100%;
     padding-right: 72px;
     font-size: 21px;
+  }
+
+  .student-export-reminder-actions {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -4101,6 +4193,32 @@ body:not(.home-mode) .tool-switch-option {
 body:not(.home-mode) .tool-switch-option:hover,
 body:not(.home-mode) .tool-switch-option.is-active {
   background: rgba(225, 245, 239, 0.88);
+}
+
+body:not(.home-mode) .top-tool-switcher .tool-switch-menu,
+body:not(.home-mode) .top-tool-switcher:hover .tool-switch-menu {
+  top: calc(100% + 12px) !important;
+  left: auto !important;
+  right: 0 !important;
+  width: min(380px, calc(100vw - 28px)) !important;
+  max-height: min(68vh, 560px) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  filter: none !important;
+  transform: translateY(-8px) scale(0.98) !important;
+}
+
+body:not(.home-mode) .top-tool-switcher.is-open .tool-switch-menu,
+body:not(.home-mode) .top-tool-switcher.is-open:hover .tool-switch-menu {
+  top: calc(100% + 12px) !important;
+  left: auto !important;
+  right: 0 !important;
+  width: min(380px, calc(100vw - 28px)) !important;
+  max-height: min(68vh, 560px) !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  filter: none !important;
+  transform: translateY(0) scale(1) !important;
 }
 
 .page-teacher,
@@ -4302,12 +4420,12 @@ body:not(.home-mode) .tool-switch-option.is-active {
 .page-teacher .file-input-label,
 .page-feedback .file-input-label {
   min-height: 42px;
-  border: 1px solid rgba(255, 255, 255, 0.78) !important;
+  border: 1px solid rgba(135, 178, 184, 0.5) !important;
   border-radius: 18px !important;
-  background: rgba(255, 255, 255, 0.86) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.99), rgba(244, 252, 249, 0.96)) !important;
   color: #2c4651 !important;
-  box-shadow: 7px 7px 16px rgba(158, 177, 191, 0.22), -7px -7px 16px rgba(255, 255, 255, 0.78) !important;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 6px 6px 14px rgba(145, 165, 181, 0.24), -5px -5px 14px rgba(255, 255, 255, 0.86) !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
 }
 
 .page-teacher button:hover,
@@ -4321,7 +4439,9 @@ body:not(.home-mode) .tool-switch-option.is-active {
 .page-teacher .file-input-label:hover,
 .page-feedback .file-input-label:hover {
   transform: translateY(-2px);
-  box-shadow: 9px 10px 20px rgba(145, 165, 181, 0.26), -8px -8px 18px rgba(255, 255, 255, 0.86) !important;
+  border-color: rgba(91, 158, 166, 0.62) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(240, 251, 247, 0.98)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 8px 9px 18px rgba(134, 154, 170, 0.28), -7px -7px 17px rgba(255, 255, 255, 0.9) !important;
 }
 
 .page-teacher button.primary,
@@ -4329,21 +4449,24 @@ body:not(.home-mode) .tool-switch-option.is-active {
 .page-teacherlist button.primary,
 .page-teacher .file-input-label.file-selected,
 .page-feedback .file-input-label.file-selected {
-  background: linear-gradient(135deg, rgba(156, 230, 201, 0.86), rgba(168, 221, 244, 0.82)) !important;
+  border-color: rgba(95, 172, 165, 0.58) !important;
+  background: linear-gradient(135deg, rgba(178, 239, 218, 0.96), rgba(190, 230, 247, 0.94)) !important;
   color: #163d39 !important;
 }
 
 .page-teacher button.success,
 .page-feedback button.success,
 .page-teacherlist button.success {
-  background: linear-gradient(135deg, rgba(183, 239, 215, 0.9), rgba(201, 234, 255, 0.84)) !important;
+  border-color: rgba(99, 178, 154, 0.55) !important;
+  background: linear-gradient(135deg, rgba(196, 244, 224, 0.97), rgba(210, 239, 255, 0.94)) !important;
   color: #174b3d !important;
 }
 
 .page-teacher button.warning,
 .page-feedback button.warning,
 .page-teacherlist button.warning {
-  background: linear-gradient(135deg, rgba(248, 227, 168, 0.9), rgba(255, 235, 198, 0.86)) !important;
+  border-color: rgba(209, 177, 104, 0.56) !important;
+  background: linear-gradient(135deg, rgba(252, 234, 180, 0.98), rgba(255, 239, 209, 0.95)) !important;
   color: #65480d !important;
 }
 
@@ -4352,8 +4475,24 @@ body:not(.home-mode) .tool-switch-option.is-active {
 .page-teacherlist button.danger,
 .teacher-item .delete-btn:hover,
 .teacher-tag .delete-btn:hover {
-  background: linear-gradient(135deg, rgba(255, 210, 221, 0.92), rgba(248, 184, 184, 0.86)) !important;
+  border-color: rgba(207, 135, 154, 0.56) !important;
+  background: linear-gradient(135deg, rgba(255, 220, 229, 0.98), rgba(250, 199, 199, 0.95)) !important;
   color: #6b2434 !important;
+}
+
+.page-teacher button:disabled,
+.page-feedback button:disabled,
+.page-teacherlist button:disabled,
+.page-classroom button:disabled,
+.page-schedulecheck button:disabled,
+.page-workload button:disabled,
+.page-dailyhours button:disabled,
+.page-studentexport button:disabled {
+  opacity: 1 !important;
+  border-color: rgba(156, 181, 190, 0.42) !important;
+  background: linear-gradient(145deg, rgba(249, 252, 251, 0.96), rgba(238, 246, 244, 0.94)) !important;
+  color: #8798a1 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86), 4px 4px 10px rgba(145, 165, 181, 0.14), -4px -4px 10px rgba(255, 255, 255, 0.72) !important;
 }
 
 .page-teacher .tip,
@@ -4570,6 +4709,120 @@ body:not(.home-mode) .tool-switch-option.is-active {
   letter-spacing: 0 !important;
   text-align: center !important;
   text-shadow: 0 2px 10px rgba(105, 201, 167, 0.16);
+}
+
+.page-teacher .section,
+.page-feedback .section,
+.page-teacherlist .section,
+.page-schedulecheck .section {
+  border-color: rgba(255, 255, 255, 0.9) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(247, 253, 250, 0.96)) !important;
+  box-shadow: 12px 12px 26px rgba(147, 166, 181, 0.17), -10px -10px 22px rgba(255, 255, 255, 0.78) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.page-teacher .section:hover,
+.page-feedback .section:hover,
+.page-teacherlist .section:hover,
+.page-schedulecheck .section:hover {
+  background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(245, 252, 249, 0.98)) !important;
+}
+
+.page-teacher .tip,
+.page-feedback .tip,
+.page-teacherlist .section .tip,
+.page-schedulecheck .section .tip,
+.page-teacher .selected-file-name,
+.page-feedback .selected-file-name {
+  border-color: rgba(187, 220, 212, 0.72) !important;
+  background: linear-gradient(145deg, rgba(249, 255, 252, 0.98), rgba(238, 249, 246, 0.96)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 8px 18px rgba(151, 170, 185, 0.1) !important;
+}
+
+.page-teacher .stat-card,
+.page-teacher .collapsible-section,
+.teacher-column,
+.teacher-item,
+.teacher-tag {
+  border-color: rgba(255, 255, 255, 0.92) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(245, 251, 248, 0.96)) !important;
+  box-shadow: 9px 9px 20px rgba(158, 177, 191, 0.18), -8px -8px 18px rgba(255, 255, 255, 0.8) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.page-teacher .stat-card {
+  border: 1px solid rgba(112, 165, 171, 0.42) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(238, 250, 246, 0.98)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94), 8px 9px 18px rgba(134, 154, 170, 0.22), -7px -7px 16px rgba(255, 255, 255, 0.86) !important;
+}
+
+.page-teacher .stat-card:hover {
+  border-color: rgba(89, 146, 153, 0.54) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(232, 248, 244, 1)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96), 10px 11px 22px rgba(134, 154, 170, 0.25), -8px -8px 18px rgba(255, 255, 255, 0.9) !important;
+}
+
+.page-teacher .stat-number {
+  color: #166b63 !important;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.page-teacher .stat-label {
+  color: #5d7480 !important;
+}
+
+.teacher-column.fulltime,
+.teacher-item.fulltime-item,
+.teacher-tag.fulltime {
+  background: linear-gradient(145deg, rgba(233, 246, 255, 0.98), rgba(255, 255, 255, 0.97)) !important;
+}
+
+.teacher-column.parttime,
+.teacher-item.parttime-item,
+.teacher-tag.parttime {
+  background: linear-gradient(145deg, rgba(232, 250, 242, 0.98), rgba(255, 255, 255, 0.97)) !important;
+}
+
+.page-teacher .table-wrap,
+.page-feedback .table-wrap,
+.page-teacherlist .table-wrap {
+  border-color: rgba(255, 255, 255, 0.92) !important;
+  background: rgba(255, 255, 255, 0.98) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 10px 22px rgba(151, 170, 185, 0.12) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.page-teacher .virtual-table,
+.page-feedback .virtual-table,
+.page-teacherlist .virtual-table {
+  background: rgba(255, 255, 255, 0.99) !important;
+}
+
+.page-teacher .virtual-table tbody tr:nth-child(odd),
+.page-feedback .virtual-table tbody tr:nth-child(odd),
+.page-teacherlist .virtual-table tbody tr:nth-child(odd) {
+  background: rgba(252, 255, 253, 0.98) !important;
+}
+
+.page-teacher .virtual-table tbody tr:nth-child(even),
+.page-feedback .virtual-table tbody tr:nth-child(even),
+.page-teacherlist .virtual-table tbody tr:nth-child(even) {
+  background: rgba(245, 252, 249, 0.96) !important;
+}
+
+.page-schedulecheck .tool-embed-shell {
+  border-color: rgba(255, 255, 255, 0.92) !important;
+  background: linear-gradient(145deg, rgba(255, 255, 255, 0.99), rgba(246, 253, 250, 0.97)) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 0 12px 24px rgba(151, 170, 185, 0.12) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+.page-schedulecheck .tool-embed-frame {
+  background: #fbfffc !important;
 }
 
 
@@ -5028,6 +5281,7 @@ function initToolSwitcher() {
       switcher.addEventListener('mouseleave', () => {
         setToolSwitcherOpen(switcher, false);
       });
+
     }
 
     trigger.addEventListener('click', event => {
@@ -5066,7 +5320,14 @@ function initToolSwitcher() {
 // ==================== 页面切换功能 ====================
 function switchPage(pageName) {
   const targetPage = document.getElementById('page-' + pageName);
-  if (!targetPage || targetPage.classList.contains('active')) return;
+  if (!targetPage) return;
+  const nextHash = '#' + pageName;
+  if (targetPage.classList.contains('active')) {
+    if (window.location.hash !== nextHash) {
+      history.replaceState(null, '', window.location.pathname + window.location.search + nextHash);
+    }
+    return;
+  }
   if (document.body.classList.contains('home-mode') && window.PreviewMainDesign && typeof window.PreviewMainDesign.beforeSwitch === 'function') {
     window.PreviewMainDesign.beforeSwitch(pageName);
   }
@@ -5084,6 +5345,9 @@ function switchPage(pageName) {
   
   // 切换页面显示
   targetPage.classList.add('active');
+  if (window.location.hash !== nextHash) {
+    history.replaceState(null, '', window.location.pathname + window.location.search + nextHash);
+  }
   
   // 滚动到顶部
   window.requestAnimationFrame(() => {
@@ -5102,6 +5366,7 @@ function goHome() {
   
   // 显示主界面
   document.getElementById('page-home').classList.add('active');
+  document.getElementById('page-home').classList.add('active');
   document.body.classList.add('home-mode');
   
   // 隐藏导航栏和返回按钮
@@ -5109,6 +5374,9 @@ function goHome() {
   document.getElementById('backHomeBtn').style.display = 'none';
   closeToolSwitchers();
   updateToolNavigation(null);
+  if (window.location.hash) {
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
   
   // 取消导航栏高亮
   document.querySelectorAll('.nav-item').forEach(item => {
@@ -7507,12 +7775,25 @@ const embeddedFrameCss = `
   form {
     border: 1px solid rgba(255, 255, 255, 0.64) !important;
     border-radius: 24px !important;
-    background: rgba(255, 255, 255, 0.86) !important;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(247, 253, 250, 0.96)) !important;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.84), 0 10px 24px rgba(151, 170, 185, 0.1) !important;
-    backdrop-filter: blur(10px) saturate(1.05) !important;
-    -webkit-backdrop-filter: blur(10px) saturate(1.05) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
     transform: none !important;
     animation: none !important;
+  }
+  .stats-card,
+  .stat-card,
+  .metric-card,
+  .summary-card,
+  .count-card,
+  .data-card {
+    border: 1px solid rgba(112, 165, 171, 0.42) !important;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(238, 250, 246, 0.98)) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94), 8px 9px 18px rgba(134, 154, 170, 0.22), -7px -7px 16px rgba(255, 255, 255, 0.86) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    opacity: 1 !important;
   }
   .card::before,
   .card::after,
@@ -7540,7 +7821,36 @@ const embeddedFrameCss = `
   .card-data:hover,
   .stat-card:hover {
     transform: none !important;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.84), 0 10px 24px rgba(151, 170, 185, 0.1) !important;
+    border-color: rgba(89, 146, 153, 0.54) !important;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(232, 248, 244, 1)) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.96), 10px 11px 22px rgba(134, 154, 170, 0.25), -8px -8px 18px rgba(255, 255, 255, 0.9) !important;
+  }
+  table,
+  .table,
+  .data-table,
+  .result-table {
+    background: rgba(255, 255, 255, 0.99) !important;
+    border-color: rgba(187, 220, 212, 0.52) !important;
+  }
+  th,
+  thead td {
+    background: linear-gradient(180deg, rgba(239, 249, 246, 0.98), rgba(226, 243, 250, 0.94)) !important;
+    color: var(--embed-ink) !important;
+  }
+  td,
+  tbody tr {
+    background-color: rgba(255, 255, 255, 0.97) !important;
+  }
+  tbody tr:nth-child(even) td,
+  tbody tr:nth-child(even) {
+    background-color: rgba(246, 253, 249, 0.96) !important;
+  }
+  input,
+  select,
+  textarea {
+    background: rgba(255, 255, 255, 0.98) !important;
+    border-color: rgba(183, 213, 207, 0.72) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86) !important;
   }
   .card-enter,
   .fade-in,
@@ -7641,12 +7951,13 @@ const embeddedFrameCss = `
   input[type="submit"],
   input[type="file"]::file-selector-button {
     min-height: 40px !important;
-    border: 1px solid var(--embed-border) !important;
+    border: 1px solid rgba(135, 178, 184, 0.5) !important;
     border-radius: 18px !important;
-    background: rgba(255, 255, 255, 0.88) !important;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.99), rgba(244, 252, 249, 0.96)) !important;
     color: #2c4651 !important;
-    box-shadow: 7px 7px 16px rgba(158, 177, 191, 0.22), -7px -7px 16px rgba(255, 255, 255, 0.78) !important;
-    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92), 6px 6px 14px rgba(145, 165, 181, 0.24), -5px -5px 14px rgba(255, 255, 255, 0.86) !important;
+    opacity: 1 !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease !important;
   }
   button:hover,
   .button:hover,
@@ -7654,35 +7965,52 @@ const embeddedFrameCss = `
   input[type="button"]:hover,
   input[type="submit"]:hover {
     transform: translateY(-2px) !important;
-    box-shadow: 9px 10px 20px rgba(145, 165, 181, 0.26), -8px -8px 18px rgba(255, 255, 255, 0.86) !important;
+    border-color: rgba(91, 158, 166, 0.62) !important;
+    background: linear-gradient(145deg, rgba(255, 255, 255, 1), rgba(240, 251, 247, 0.98)) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), 8px 9px 18px rgba(134, 154, 170, 0.28), -7px -7px 17px rgba(255, 255, 255, 0.9) !important;
   }
   .primary,
   .btn-primary,
   button.primary,
   button[class*="primary"] {
-    background: linear-gradient(135deg, rgba(156, 230, 201, 0.86), rgba(168, 221, 244, 0.82)) !important;
+    border-color: rgba(95, 172, 165, 0.58) !important;
+    background: linear-gradient(135deg, rgba(178, 239, 218, 0.96), rgba(190, 230, 247, 0.94)) !important;
     color: #163d39 !important;
   }
   .success,
   .btn-success,
   button.success,
   button[class*="success"] {
-    background: linear-gradient(135deg, rgba(183, 239, 215, 0.9), rgba(201, 234, 255, 0.84)) !important;
+    border-color: rgba(99, 178, 154, 0.55) !important;
+    background: linear-gradient(135deg, rgba(196, 244, 224, 0.97), rgba(210, 239, 255, 0.94)) !important;
     color: #174b3d !important;
   }
   .warning,
   .btn-warning,
   button.warning,
   button[class*="warning"] {
-    background: linear-gradient(135deg, rgba(248, 227, 168, 0.9), rgba(255, 235, 198, 0.86)) !important;
+    border-color: rgba(209, 177, 104, 0.56) !important;
+    background: linear-gradient(135deg, rgba(252, 234, 180, 0.98), rgba(255, 239, 209, 0.95)) !important;
     color: #65480d !important;
   }
   .danger,
   .btn-danger,
   button.danger,
   button[class*="danger"] {
-    background: linear-gradient(135deg, rgba(255, 210, 221, 0.92), rgba(248, 184, 184, 0.86)) !important;
+    border-color: rgba(207, 135, 154, 0.56) !important;
+    background: linear-gradient(135deg, rgba(255, 220, 229, 0.98), rgba(250, 199, 199, 0.95)) !important;
     color: #6b2434 !important;
+  }
+  button:disabled,
+  .button:disabled,
+  [role="button"][aria-disabled="true"],
+  input[type="button"]:disabled,
+  input[type="submit"]:disabled {
+    opacity: 1 !important;
+    border-color: rgba(156, 181, 190, 0.42) !important;
+    background: linear-gradient(145deg, rgba(249, 252, 251, 0.96), rgba(238, 246, 244, 0.94)) !important;
+    color: #8798a1 !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86), 4px 4px 10px rgba(145, 165, 181, 0.14), -4px -4px 10px rgba(255, 255, 255, 0.72) !important;
   }
   input,
   select,
@@ -8068,6 +8396,8 @@ document.addEventListener('DOMContentLoaded', function() {
 // 学员数据导出强提醒：按固定现实日期周期计算，不随页面点击顺延。
 (function() {
   const STORAGE_KEY = 'eduTools.studentExportReminder.acknowledgedDueDate.v1';
+  const ACK_DETAIL_STORAGE_KEY = 'eduTools.studentExportReminder.acknowledgementDetail.v1';
+  const SECONDARY_STORAGE_KEY = 'eduTools.studentExportReminder.secondaryDismissed.v1';
   const COMPLETION_STORAGE_KEY = 'eduTools.studentExportStatus.v1';
   const START_DATE = { year: 2026, month: 7, day: 11 };
   const INTERVAL_DAYS = 10;
@@ -8133,8 +8463,40 @@ document.addEventListener('DOMContentLoaded', function() {
   function saveAcknowledgement(cycle) {
     try {
       localStorage.setItem(STORAGE_KEY, cycle.dueKey);
+      localStorage.setItem(ACK_DETAIL_STORAGE_KEY, JSON.stringify({
+        dueKey: cycle.dueKey,
+        date: getTodayKeyForStatus()
+      }));
     } catch (error) {
       console.warn('student export reminder acknowledgement skipped', error);
+    }
+  }
+
+  function readAcknowledgementDetail() {
+    try {
+      return JSON.parse(localStorage.getItem(ACK_DETAIL_STORAGE_KEY) || 'null');
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function getSecondaryDismissKey(cycle, date = new Date()) {
+    return cycle.dueKey + '|' + getTodayKeyForStatus(date);
+  }
+
+  function isSecondaryDismissed(cycle, date = new Date()) {
+    try {
+      return localStorage.getItem(SECONDARY_STORAGE_KEY) === getSecondaryDismissKey(cycle, date);
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function saveSecondaryDismissed(cycle, date = new Date()) {
+    try {
+      localStorage.setItem(SECONDARY_STORAGE_KEY, getSecondaryDismissKey(cycle, date));
+    } catch (error) {
+      console.warn('student export secondary reminder skipped', error);
     }
   }
 
@@ -8251,10 +8613,72 @@ document.addEventListener('DOMContentLoaded', function() {
     return backdrop;
   }
 
+  function buildSecondaryReminder(cycle, date = new Date()) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'student-export-reminder-backdrop';
+    backdrop.setAttribute('role', 'dialog');
+    backdrop.setAttribute('aria-modal', 'true');
+    backdrop.setAttribute('aria-labelledby', 'studentExportSecondaryReminderTitle');
+
+    backdrop.innerHTML = `
+      <div class="student-export-reminder-dialog">
+        <div class="student-export-reminder-kicker">再次确认</div>
+        <h2 class="student-export-reminder-title" id="studentExportSecondaryReminderTitle">是不是忘记导出学员啦？</h2>
+        <p class="student-export-reminder-text">首页学员导出还没有完成标记，先提醒你确认一下</p>
+        <div class="student-export-reminder-meta">
+          <div><strong>本轮导出日：</strong>${cycle.dueLabel}</div>
+          <div>这次后不再提醒</div>
+        </div>
+        <div class="student-export-reminder-actions">
+          <button class="student-export-reminder-button" type="button" data-student-export-secondary-now>马上</button>
+          <button class="student-export-reminder-button is-secondary" type="button" data-student-export-secondary-later>稍后</button>
+        </div>
+      </div>
+    `;
+
+    const nowButton = backdrop.querySelector('[data-student-export-secondary-now]');
+    const laterButton = backdrop.querySelector('[data-student-export-secondary-later]');
+    nowButton.addEventListener('click', function() {
+      saveSecondaryDismissed(cycle, date);
+      backdrop.remove();
+    });
+    laterButton.addEventListener('click', function() {
+      saveSecondaryDismissed(cycle, date);
+      backdrop.remove();
+    });
+
+    return backdrop;
+  }
+
+  function shouldShowSecondaryReminder(cycle, date = new Date()) {
+    const todayKey = getTodayKeyForStatus(date);
+    const acknowledgement = readAcknowledgementDetail();
+    const status = getStudentExportCardStatus(date);
+    return Boolean(
+      cycle &&
+      isAcknowledged(cycle) &&
+      acknowledgement &&
+      acknowledgement.dueKey === cycle.dueKey &&
+      acknowledgement.date === todayKey &&
+      status.state !== 'completed' &&
+      !isSecondaryDismissed(cycle, date)
+    );
+  }
+
+  function showSecondaryReminderIfNeeded(date = new Date()) {
+    const cycle = getReminderCycleForDate(date);
+    broadcastStudentExportStatus(date);
+    if (!shouldShowSecondaryReminder(cycle, date)) return false;
+    if (document.querySelector('.student-export-reminder-backdrop')) return true;
+    document.body.appendChild(buildSecondaryReminder(cycle, date));
+    return true;
+  }
+
   function showReminderIfNeeded(date = new Date()) {
     const cycle = getReminderCycleForDate(date);
     broadcastStudentExportStatus(date);
-    if (!cycle || isAcknowledged(cycle)) return false;
+    if (!cycle) return false;
+    if (isAcknowledged(cycle)) return showSecondaryReminderIfNeeded(date);
     if (document.querySelector('.student-export-reminder-backdrop')) return true;
     document.body.appendChild(buildReminder(cycle));
     return true;
@@ -8266,6 +8690,7 @@ document.addEventListener('DOMContentLoaded', function() {
     markStudentExportComplete,
     broadcastStatus: broadcastStudentExportStatus,
     completionStorageKey: COMPLETION_STORAGE_KEY,
+    showSecondaryReminderIfNeeded,
     showReminderIfNeeded,
     storageKey: STORAGE_KEY
   };
@@ -9263,7 +9688,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const target = window.location.hash ? window.location.hash.slice(1) : '';
     if (target && typeof switchPage === 'function' && document.getElementById('page-' + target)) {
       switchPage(target);
-      history.replaceState(null, '', window.location.pathname + window.location.search);
     }
     applyDailyStatusLocally(readDailyStatus());
     applyMonthlyStatusLocally(readMonthlyStatus());
