@@ -810,17 +810,19 @@ body.page-switching .page-container.active {
 
 .page-feedback .virtual-table .schedule-filter-arrow {
   flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  padding: 0;
+  width: 22px;
+  min-width: 22px;
+  min-height: 22px !important;
+  height: 22px;
+  padding: 0 !important;
   border: none;
   border-radius: 4px;
   background: transparent !important;
   color: #94a3b8;
   box-shadow: none !important;
   transform: none !important;
-  font-size: 11px;
-  line-height: 18px;
+  font-size: 10px;
+  line-height: 22px;
   justify-content: center;
   cursor: pointer;
   overflow: visible;
@@ -836,13 +838,14 @@ body.page-switching .page-container.active {
   background: rgba(37, 99, 235, 0.08) !important;
 }
 
-.page-feedback .virtual-table .schedule-filter-menu {
-  position: absolute;
+.page-feedback .virtual-table .schedule-filter-menu,
+body > .schedule-filter-menu {
+  position: fixed;
   top: calc(100% + 4px);
-  right: 6px;
+  right: auto;
   min-width: 180px;
-  max-width: 280px;
-  max-height: 280px;
+  max-width: min(420px, calc(100vw - 32px));
+  max-height: min(420px, calc(100vh - 128px));
   overflow-y: auto;
   background: #fff;
   border: 1px solid #cbd5e1;
@@ -853,21 +856,23 @@ body.page-switching .page-container.active {
   padding: 4px 0;
 }
 
-.page-feedback .virtual-table .schedule-filter-option {
+.page-feedback .virtual-table .schedule-filter-option,
+body > .schedule-filter-menu .schedule-filter-option {
   padding: 8px 12px;
   cursor: pointer;
   font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
   background: #fff;
 }
 
-.page-feedback .virtual-table .schedule-filter-option:hover {
+.page-feedback .virtual-table .schedule-filter-option:hover,
+body > .schedule-filter-menu .schedule-filter-option:hover {
   background: #eff6ff;
 }
 
-.page-feedback .virtual-table .schedule-filter-option.active {
+.page-feedback .virtual-table .schedule-filter-option.active,
+body > .schedule-filter-menu .schedule-filter-option.active {
   color: #1d4ed8;
   background: #dbeafe;
 }
@@ -940,13 +945,15 @@ body.page-switching .page-container.active {
   width: min(360px, calc(100vw - 24px));
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
   z-index: 100000;
   pointer-events: none;
 }
 
 .toast {
   position: relative;
+  flex: 0 0 auto;
+  min-height: 48px;
   padding: 12px 20px;
   border-radius: 14px;
   color: white;
@@ -3825,7 +3832,7 @@ body.home-mode { overflow: hidden; background: #eef2f6 !important; }
 .figma-built-frame { display: block; width: 100%; height: 100vh; border: 0; margin: 0; padding: 0; background: #eef2f6; }
 /* === FIGMA BUILT HOME END === */
 
-/* ========== 学员数据导出强提醒 ========== */
+/* ========== 未反馈导出十天提醒 ========== */
 .student-export-reminder-backdrop {
   position: fixed;
   inset: 0;
@@ -4584,7 +4591,7 @@ body:not(.home-mode) .top-tool-switcher.is-open:hover .tool-switch-menu {
 .page-teacherlist .virtual-table {
   border-collapse: separate;
   border-spacing: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .page-teacher .virtual-table th,
@@ -4592,6 +4599,9 @@ body:not(.home-mode) .top-tool-switcher.is-open:hover .tool-switch-menu {
 .page-teacherlist .virtual-table th {
   background: linear-gradient(180deg, rgba(239, 249, 246, 0.96), rgba(225, 243, 250, 0.9)) !important;
   color: #284856 !important;
+  position: sticky !important;
+  top: 0;
+  z-index: 3;
 }
 
 .page-teacher .virtual-table td,
@@ -4830,7 +4840,6 @@ body:not(.home-mode) .top-tool-switcher.is-open:hover .tool-switch-menu {
 .page-schedulecheck .tool-embed-frame {
   background: #fbfffc !important;
 }
-
 
 @media (max-width: 768px) {
   .page-teacher .container,
@@ -6168,7 +6177,7 @@ const FeedbackApp = (function() {
   }
 
   function openScheduleFilterMenu(th, colIndex) {
-    const existing = th.querySelector('.schedule-filter-menu');
+    const existing = document.querySelector('.schedule-filter-menu');
     closeScheduleFilterMenus();
     if (existing) return;
 
@@ -6179,7 +6188,12 @@ const FeedbackApp = (function() {
     getScheduleColumnValues(colIndex).forEach(value => {
       menu.appendChild(createScheduleFilterOption(value || '(空白)', value, colIndex, th));
     });
-    th.appendChild(menu);
+    const rect = th.getBoundingClientRect();
+    const menuWidth = Math.min(Math.max(rect.width, 180), window.innerWidth - 32);
+    menu.style.width = `${menuWidth}px`;
+    menu.style.left = `${Math.min(Math.max(16, rect.left), window.innerWidth - menuWidth - 16)}px`;
+    menu.style.top = `${Math.min(rect.bottom + 4, window.innerHeight - 80)}px`;
+    document.body.appendChild(menu);
   }
 
   document.addEventListener('click', () => closeScheduleFilterMenus());
@@ -6388,6 +6402,13 @@ const FeedbackApp = (function() {
         if (cell) cell.s = { font };
       }
     }
+  }
+
+  function markFeedbackExportComplete() {
+    if (window.StudentExportReminder && typeof window.StudentExportReminder.markStudentExportComplete === 'function') {
+      window.StudentExportReminder.markStudentExportComplete();
+    }
+    window.dispatchEvent(new CustomEvent('edu-tools:feedback-exported'));
   }
 
   function clearNameForGroupRows(rows) {
@@ -7046,6 +7067,7 @@ const FeedbackApp = (function() {
       XLSX.utils.book_append_sheet(wb, ws, "理科未反馈");
       setSheetStyle(ws);
       XLSX.writeFile(wb, "理科未反馈课表.xlsx");
+      markFeedbackExportComplete();
       showToast('导出成功', 'success');
     },
 
@@ -7066,6 +7088,7 @@ const FeedbackApp = (function() {
       XLSX.utils.book_append_sheet(wb, ws, "英语未反馈");
       setSheetStyle(ws);
       XLSX.writeFile(wb, "英语未反馈课表.xlsx");
+      markFeedbackExportComplete();
       showToast('导出成功', 'success');
     },
 
@@ -7090,6 +7113,7 @@ const FeedbackApp = (function() {
       XLSX.utils.book_append_sheet(wb, ws, "总未反馈");
       setSheetStyle(ws);
       XLSX.writeFile(wb, "总未反馈课表.xlsx");
+      markFeedbackExportComplete();
       
       showToast(`导出成功 ✅ 共 ${sortedOut.length - 1} 条`, 'success');
     },
@@ -7118,6 +7142,7 @@ const FeedbackApp = (function() {
       XLSX.utils.book_append_sheet(wb, ws, "理科未反馈");
       setSheetStyle(ws);
       XLSX.writeFile(wb, "理科未反馈课表.xlsx");
+      markFeedbackExportComplete();
       
       showToast(`导出成功 ✅ 共 ${sortedOut.length - 1} 条`, 'success');
     },
@@ -7146,6 +7171,7 @@ const FeedbackApp = (function() {
       XLSX.utils.book_append_sheet(wb, ws, "英语未反馈");
       setSheetStyle(ws);
       XLSX.writeFile(wb, "英语未反馈课表.xlsx");
+      markFeedbackExportComplete();
       
       showToast(`导出成功 ✅ 共 ${sortedOut.length - 1} 条`, 'success');
     },
@@ -7835,13 +7861,26 @@ const embeddedFrameCss = `
   .table,
   .data-table,
   .result-table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
     background: rgba(255, 255, 255, 0.99) !important;
     border-color: rgba(187, 220, 212, 0.52) !important;
+  }
+  .table-container,
+  .table-wrapper,
+  [class*="table-container"],
+  [class*="table-wrapper"] {
+    position: relative !important;
+    max-height: min(65vh, 720px) !important;
+    overflow: auto !important;
   }
   th,
   thead td {
     background: linear-gradient(180deg, rgba(239, 249, 246, 0.98), rgba(226, 243, 250, 0.94)) !important;
     color: var(--embed-ink) !important;
+    position: sticky !important;
+    top: 0;
+    z-index: 4;
   }
   td,
   tbody tr {
@@ -8399,12 +8438,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
 <script>
-// 学员数据导出强提醒：按固定现实日期周期计算，不随页面点击顺延。
+// 未反馈导出提醒：按固定现实日期周期计算，不随页面点击顺延。
 (function() {
   const STORAGE_KEY = 'eduTools.studentExportReminder.acknowledgedDueDate.v1';
   const ACK_DETAIL_STORAGE_KEY = 'eduTools.studentExportReminder.acknowledgementDetail.v1';
   const SECONDARY_STORAGE_KEY = 'eduTools.studentExportReminder.secondaryDismissed.v1';
-  const COMPLETION_STORAGE_KEY = 'eduTools.studentExportStatus.v1';
+  // 十天未反馈完成状态独立保存，避免被旧的学员导出同步状态覆盖。
+  const COMPLETION_STORAGE_KEY = 'eduTools.feedbackTenDayStatus.v1';
+  const LEGACY_COMPLETION_STORAGE_KEY = 'eduTools.studentExportStatus.v1';
   const START_DATE = { year: 2026, month: 7, day: 11 };
   const INTERVAL_DAYS = 10;
   const DAY_MS = 24 * 60 * 60 * 1000;
@@ -8512,7 +8553,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function readCompletionStatus() {
     try {
-      return JSON.parse(localStorage.getItem(COMPLETION_STORAGE_KEY) || 'null');
+      const current = JSON.parse(localStorage.getItem(COMPLETION_STORAGE_KEY) || 'null');
+      return current || JSON.parse(localStorage.getItem(LEGACY_COMPLETION_STORAGE_KEY) || 'null');
     } catch (error) {
       return null;
     }
@@ -8521,6 +8563,8 @@ document.addEventListener('DOMContentLoaded', function() {
   function writeCompletionStatus(status) {
     try {
       localStorage.setItem(COMPLETION_STORAGE_KEY, JSON.stringify(status));
+      // 保留旧键，兼容现有跨设备同步通道；首页展示始终以独立十天状态为准。
+      localStorage.setItem(LEGACY_COMPLETION_STORAGE_KEY, JSON.stringify(status));
     } catch (error) {
       console.warn('student export completion status skipped', error);
     }
@@ -8586,7 +8630,7 @@ document.addEventListener('DOMContentLoaded', function() {
     backdrop.innerHTML = `
       <div class="student-export-reminder-dialog">
         <div class="student-export-reminder-kicker">导出日提醒</div>
-        <h2 class="student-export-reminder-title" id="studentExportReminderTitle">该查看未反馈啦</h2>
+        <h2 class="student-export-reminder-title" id="studentExportReminderTitle">该导出未反馈啦</h2>
         <p class="student-export-reminder-text">勾选“已知”后，本轮不会再打扰；下一轮仍按固定日期到点提醒。</p>
         <div class="student-export-reminder-meta">
           <div><strong>本轮导出日：</strong>${cycle.dueLabel}</div>
@@ -8595,7 +8639,7 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
         <label class="student-export-reminder-check">
           <input type="checkbox" data-student-export-reminder-check>
-          <span>已知，我会处理本轮学员数据导出</span>
+          <span>已知，我会处理本轮未反馈导出</span>
         </label>
         <button class="student-export-reminder-button" type="button" data-student-export-reminder-close disabled>好，我记下啦</button>
       </div>
@@ -8612,7 +8656,7 @@ document.addEventListener('DOMContentLoaded', function() {
       broadcastStudentExportStatus();
       backdrop.remove();
       if (typeof showToast === 'function') {
-        showToast('已记下本轮学员数据导出提醒', 'success');
+        showToast('已记下本轮未反馈导出提醒', 'success');
       }
     });
 
@@ -8629,7 +8673,7 @@ document.addEventListener('DOMContentLoaded', function() {
     backdrop.innerHTML = `
       <div class="student-export-reminder-dialog">
         <div class="student-export-reminder-kicker">再次确认</div>
-        <h2 class="student-export-reminder-title" id="studentExportSecondaryReminderTitle">是不是忘记查看未反馈啦？</h2>
+        <h2 class="student-export-reminder-title" id="studentExportSecondaryReminderTitle">是不是忘记导出未反馈啦？</h2>
         <p class="student-export-reminder-text">首页未反馈助手还没有完成标记，先提醒你确认一下</p>
         <div class="student-export-reminder-meta">
           <div><strong>本轮导出日：</strong>${cycle.dueLabel}</div>
@@ -8703,12 +8747,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
   window.addEventListener('message', function(event) {
     const data = event.data || {};
-    if (data.type === 'student-export:completed') {
-      if (markStudentExportComplete() && typeof showToast === 'function') {
-        showToast('学员数据导出已完成，未反馈助手状态已更新', 'success');
-      }
-      return;
-    }
     if (data.type === 'edu-tools:student-export-status-ready') {
       broadcastStudentExportStatus();
     }
@@ -8821,11 +8859,15 @@ document.addEventListener('DOMContentLoaded', function() {
       width: 30px;
       height: 30px;
       border-radius: 999px;
-      background: rgba(255, 255, 255, 0.9);
-      border: 1px solid rgba(255, 255, 255, 0.95);
-      box-shadow: 0 8px 18px rgba(16, 185, 129, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.9);
-      font-size: 16px;
+      background: linear-gradient(145deg, #86efac, #22c55e 56%, #16a34a);
+      border: 2px solid rgba(255, 255, 255, 0.92);
+      box-shadow: 0 7px 16px rgba(22, 163, 74, 0.28), 0 0 0 3px rgba(220, 252, 231, 0.9), inset 0 2px 2px rgba(255, 255, 255, 0.36);
+      color: #ffffff;
+      font-size: 18px;
+      font-weight: 900;
       line-height: 1;
+      transform: rotate(-4deg);
+      text-shadow: 0 1px 2px rgba(21, 128, 61, 0.45);
     }
     @keyframes studentExportBadgePulse {
       0%, 100% { transform: scale(1); box-shadow: 0 7px 16px rgba(251, 113, 133, 0.28), 0 0 0 5px rgba(255, 228, 230, 0.8); }
@@ -8841,6 +8883,8 @@ document.addEventListener('DOMContentLoaded', function() {
       feedback: '未反馈助手',
       workload: '教师课时核算'
     };
+    let currentMonthlyStatus = null;
+    let monthlyStatusRenderQueued = false;
 
     function getMonthKey() {
       const now = new Date();
@@ -8863,15 +8907,19 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!labelNode || !labelNode.parentElement) return false;
       const marker = labelNode.previousElementSibling;
       if (!marker) return false;
-      marker.className = done
+      const nextClassName = done
         ? 'w-3.5 h-3.5 rounded-full shrink-0 border-2 border-emerald-400 text-emerald-500 bg-white/30 shadow-sm flex items-center justify-center text-[0.65rem] font-black leading-none'
         : 'w-2.5 h-2.5 rounded-full shrink-0 shadow-sm bg-slate-200';
-      marker.textContent = '';
+      if (marker.dataset.monthlyStatusDone === String(done)) return true;
+      marker.className = nextClassName;
+      marker.dataset.monthlyStatusDone = String(done);
+      marker.textContent = done ? '√' : '';
       return true;
     }
 
     function renderMonthlyStatus(status) {
       const normalized = normalizeMonthlyStatus(status);
+      currentMonthlyStatus = normalized;
       let rendered = true;
       Object.keys(MONTHLY_STATUS_LABELS).forEach(key => {
         rendered = setTaskPillDone(MONTHLY_STATUS_LABELS[key], normalized[key]) && rendered;
@@ -8879,6 +8927,15 @@ document.addEventListener('DOMContentLoaded', function() {
       if (!rendered) {
         window.setTimeout(() => renderMonthlyStatus(normalized), 120);
       }
+    }
+
+    function scheduleMonthlyStatusRender() {
+      if (monthlyStatusRenderQueued || !currentMonthlyStatus) return;
+      monthlyStatusRenderQueued = true;
+      window.requestAnimationFrame(() => {
+        monthlyStatusRenderQueued = false;
+        renderMonthlyStatus(currentMonthlyStatus);
+      });
     }
 
     function readMonthlyStatus() {
@@ -8900,6 +8957,9 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
 
+    const monthlyStatusObserver = new MutationObserver(scheduleMonthlyStatusRender);
+    monthlyStatusObserver.observe(document.documentElement, { childList: true, subtree: true });
+
     function findStudentExportCard() {
       const titleNode = Array.from(document.querySelectorAll('h3')).find(node => node.textContent.trim() === '未反馈助手');
       return titleNode ? titleNode.closest('button') : null;
@@ -8916,7 +8976,7 @@ document.addEventListener('DOMContentLoaded', function() {
       const badge = document.createElement('span');
       badge.className = 'student-export-card-badge ' + (status.state === 'completed' ? 'is-completed' : 'is-pending');
       badge.setAttribute('aria-hidden', 'true');
-      if (status.state === 'completed') badge.textContent = '✅';
+      if (status.state === 'completed') badge.textContent = '✓';
       card.appendChild(badge);
     }
 
@@ -8930,9 +8990,13 @@ document.addEventListener('DOMContentLoaded', function() {
     window.parent?.postMessage({ type: 'edu-tools:monthly-status-ready' }, '*');
     window.parent?.postMessage({ type: 'edu-tools:student-export-status-ready' }, '*');
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => renderMonthlyStatus(readMonthlyStatus()));
+      document.addEventListener('DOMContentLoaded', () => {
+        renderMonthlyStatus(readMonthlyStatus());
+        scheduleMonthlyStatusRender();
+      });
     } else {
       renderMonthlyStatus(readMonthlyStatus());
+      scheduleMonthlyStatusRender();
     }
   })();
   <\/script>
@@ -9174,6 +9238,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function applyStudentExportStatusLocally(status) {
     const normalized = writeStudentExportStatus(status);
+    if (normalized.completed && normalized.dueKey) {
+      writeCompletionStatus({
+        completed: true,
+        dueKey: normalized.dueKey,
+        date: normalized.date || getTodayKey()
+      });
+    }
     if (window.StudentExportReminder && typeof window.StudentExportReminder.broadcastStatus === 'function') {
       window.StudentExportReminder.broadcastStatus();
     }
@@ -9552,6 +9623,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const normalized = applyMonthlyStatusLocally(status);
     syncMonthlyStatusToCloud(normalized).then(() => broadcastMonthlyStatusToRealtime(readMonthlyStatus()));
   }
+
+  window.addEventListener('edu-tools:feedback-exported', function() {
+    markMonthlyToolComplete('feedback');
+  });
 
   function getMonthlyToolKeyFromTarget(target) {
     if (!target || !target.closest) return '';
