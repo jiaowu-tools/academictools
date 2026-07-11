@@ -3857,21 +3857,27 @@ body.home-mode { overflow: hidden; background: #eef2f6 !important; }
 .student-export-reminder-dialog::before {
   content: "10天";
   position: absolute;
-  top: 22px;
-  right: 24px;
-  width: 62px;
-  height: 58px;
-  border-radius: 20px;
+  top: 18px;
+  right: 20px;
+  width: 72px;
+  height: 68px;
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  border-radius: 22px 22px 26px 26px;
   background:
-    linear-gradient(#fb7185 0 13px, #fff7ed 13px);
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.76), 0 12px 22px rgba(251, 113, 133, 0.22);
+    radial-gradient(circle at 18px 13px, #fff 0 4px, #fda4af 4.5px 6px, transparent 6.5px),
+    radial-gradient(circle at 54px 13px, #fff 0 4px, #fda4af 4.5px 6px, transparent 6.5px),
+    radial-gradient(circle at 22px 47px, rgba(251, 113, 133, 0.2) 0 1.5px, transparent 2px),
+    radial-gradient(circle at 50px 51px, rgba(251, 113, 133, 0.16) 0 1.5px, transparent 2px),
+    linear-gradient(180deg, #fb8da0 0 22px, #fff9f8 22px);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.72), 0 12px 22px rgba(251, 113, 133, 0.24);
   color: #0f766e;
   display: grid;
   place-items: center;
-  padding-top: 10px;
+  padding-top: 13px;
   font-size: 15px;
   font-weight: 900;
-  transform: rotate(5deg);
+  letter-spacing: 0.04em;
+  transform: rotate(4deg);
 }
 
 .student-export-reminder-dialog::after {
@@ -8580,7 +8586,7 @@ document.addEventListener('DOMContentLoaded', function() {
     backdrop.innerHTML = `
       <div class="student-export-reminder-dialog">
         <div class="student-export-reminder-kicker">导出日提醒</div>
-        <h2 class="student-export-reminder-title" id="studentExportReminderTitle">该导出所有学员数据啦</h2>
+        <h2 class="student-export-reminder-title" id="studentExportReminderTitle">该查看未反馈啦</h2>
         <p class="student-export-reminder-text">勾选“已知”后，本轮不会再打扰；下一轮仍按固定日期到点提醒。</p>
         <div class="student-export-reminder-meta">
           <div><strong>本轮导出日：</strong>${cycle.dueLabel}</div>
@@ -8623,8 +8629,8 @@ document.addEventListener('DOMContentLoaded', function() {
     backdrop.innerHTML = `
       <div class="student-export-reminder-dialog">
         <div class="student-export-reminder-kicker">再次确认</div>
-        <h2 class="student-export-reminder-title" id="studentExportSecondaryReminderTitle">是不是忘记导出学员啦？</h2>
-        <p class="student-export-reminder-text">首页学员导出还没有完成标记，先提醒你确认一下</p>
+        <h2 class="student-export-reminder-title" id="studentExportSecondaryReminderTitle">是不是忘记查看未反馈啦？</h2>
+        <p class="student-export-reminder-text">首页未反馈助手还没有完成标记，先提醒你确认一下</p>
         <div class="student-export-reminder-meta">
           <div><strong>本轮导出日：</strong>${cycle.dueLabel}</div>
           <div>这次后不再提醒</div>
@@ -8699,7 +8705,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const data = event.data || {};
     if (data.type === 'student-export:completed') {
       if (markStudentExportComplete() && typeof showToast === 'function') {
-        showToast('学员数据导出已完成，首页状态已更新', 'success');
+        showToast('学员数据导出已完成，未反馈助手状态已更新', 'success');
       }
       return;
     }
@@ -8895,7 +8901,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     function findStudentExportCard() {
-      const titleNode = Array.from(document.querySelectorAll('h3')).find(node => node.textContent.trim() === '学员导出');
+      const titleNode = Array.from(document.querySelectorAll('h3')).find(node => node.textContent.trim() === '未反馈助手');
       return titleNode ? titleNode.closest('button') : null;
     }
 
