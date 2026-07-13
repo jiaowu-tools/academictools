@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.2.1
+// @version      1.2.3
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.2.1';
+  const SCRIPT_VERSION = '1.2.3';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -5974,6 +5974,8 @@
       if (!middleCampuses.length || middleCampuses.every((campus) => campus === previousCampus)) continue;
 
       const commuteSummary = getTwoColorSandwichCommuteSummary(previous, blockingEvents, current);
+      const hasOnlineOuter = isOnlineCourseEvent(previous) || isOnlineCourseEvent(current);
+      const hasOnlineMiddle = blockingEvents.some(isOnlineCourseEvent);
       const anomaly = createTwoColorSandwichAnomaly({
         kind: commuteSummary?.hasIssue ? '异常：时间不够跑校区' : '异常：夹心色块',
         previous,
@@ -5981,8 +5983,9 @@
         blockingEvents,
         requiredMinutes: commuteSummary?.requiredMinutes ?? null,
         availableMinutes: commuteSummary?.availableMinutes ?? null,
-        reason: commuteSummary?.reason
-          || `同一天形成 ${previousCampus}-${summarizeSandwichCampuses(blockingEvents)}-${nextCampus} 夹心色块，按夹心三色提示异常`
+        reason: hasOnlineOuter
+          ? '有线上课，未改校区，目前课表有三个校区，注意查看'
+          : (hasOnlineMiddle ? '含线上，但是线下跑了三次校区' : '线下跑了三次校区')
       });
       anomalies.push(anomaly);
     }
@@ -6033,22 +6036,14 @@
         hasIssue: true,
         requiredMinutes,
         availableMinutes,
-        reason: failed.map(formatSandwichCommuteCheck).join('；')
       };
     }
 
-    const previousCampus = getMultiCampusSummaryCampus(previous);
-    const nextCampus = getMultiCampusSummaryCampus(current);
     return {
       hasIssue: false,
       requiredMinutes,
-      availableMinutes,
-      reason: `同一天形成 ${previousCampus}-${summarizeSandwichCampuses(middleEvents)}-${nextCampus} A-B-A 夹心色块；通勤时间满足（${checks.map(formatSandwichCommuteCheck).join('；')}），仍按夹心三色提示异常`
+      availableMinutes
     };
-  }
-
-  function formatSandwichCommuteCheck(item) {
-    return `${item.fromCampus} 到 ${item.toCampus} 可通勤 ${item.availableMinutes} 分钟，需要 ${item.requiredMinutes} 分钟`;
   }
 
   function buildSandwichCommuteCheck(previous, current) {
@@ -8494,10 +8489,9 @@
       }),
       makeSelfTestCourseEvent({
         key: 'return-qianjiang-1',
-        text: 'B钱江线上',
+        text: 'B钱江线下',
         campus: '钱江校区',
         hex: '#FB5757',
-        courseForm: '线上',
         startMinutes: 11 * 60 + 15,
         endMinutes: 12 * 60,
         start: '11:15',
@@ -8525,7 +8519,53 @@
         end: '14:15'
       })
     ], makeSelfTestSettings());
-    assertHasSelfTestAnomaly(result, '异常：夹心色块', /A-B-A/);
+    assertHasSelfTestAnomaly(result, '异常：夹心色块', /^含线上，但是线下跑了三次校区$/);
+
+    const onlineOuterResult = analyze([
+      makeSelfTestCourseEvent({
+        key: 'outer-online-chengjian-1',
+        text: 'A城建线下',
+        campus: '城建校区',
+        hex: '#FFBF41',
+        startMinutes: 9 * 60,
+        endMinutes: 9 * 60 + 45,
+        start: '09:00',
+        end: '09:45'
+      }),
+      makeSelfTestCourseEvent({
+        key: 'outer-online-qianjiang-1',
+        text: 'B钱江线下',
+        campus: '钱江校区',
+        hex: '#FB5757',
+        startMinutes: 10 * 60 + 30,
+        endMinutes: 11 * 60 + 15,
+        start: '10:30',
+        end: '11:15'
+      }),
+      makeSelfTestCourseEvent({
+        key: 'outer-online-qianjiang-2',
+        text: 'B钱江线上',
+        campus: '钱江校区',
+        hex: '#FB5757',
+        courseForm: '线上',
+        startMinutes: 11 * 60 + 20,
+        endMinutes: 12 * 60 + 5,
+        start: '11:20',
+        end: '12:05'
+      }),
+      makeSelfTestCourseEvent({
+        key: 'outer-online-chengjian-2',
+        text: 'A城建线上',
+        campus: '城建校区',
+        hex: '#FFBF41',
+        courseForm: '线上',
+        startMinutes: 12 * 60 + 50,
+        endMinutes: 13 * 60 + 35,
+        start: '12:50',
+        end: '13:35'
+      })
+    ], makeSelfTestSettings());
+    assertHasSelfTestAnomaly(onlineOuterResult, '异常：夹心色块', /^有线上课，未改校区，目前课表有三个校区，注意查看$/);
   }
 
   function assertSelfTestThreeCampusesWithCommuteShort() {
