@@ -4930,9 +4930,9 @@ body:not(.home-mode) .top-tool-switcher.is-open:hover .tool-switch-menu {
       <span>教师课时核算</span>
     </div>
   </div>
-  <button class="back-home-btn" id="backHomeBtn" onclick="goHome()" style="display:none;">
-    <span>🏠</span>
-    <span>返回主界面</span>
+  <button class="back-home-btn" id="backHomeBtn" onclick="goBackInApp()" style="display:none;">
+    <span>←</span>
+    <span>返回上一级</span>
   </button>
 </nav>
 
@@ -5333,7 +5333,34 @@ function initToolSwitcher() {
 }
 
 // ==================== 页面切换功能 ====================
-function switchPage(pageName) {
+const appNavigationStack = [];
+
+function getActivePageName() {
+  const currentPage = document.querySelector('.page-container.active');
+  return currentPage ? currentPage.id.replace(/^page-/, '') : 'home';
+}
+
+function getHomeMenuForTool(pageName) {
+  const tool = getToolMeta(pageName);
+  if (!tool) return 'home';
+  if (tool.group === '每日') return 'daily';
+  if (tool.group === '每月') return 'monthly';
+  if (tool.group === '其他') return 'tools';
+  return 'home';
+}
+
+function restoreHomeMenu(menuName) {
+  if (!menuName || menuName === 'home') return;
+  const frame = document.getElementById('figmaBuiltHomeFrame');
+  const frameDocument = frame && (frame.contentDocument || (frame.contentWindow && frame.contentWindow.document));
+  if (!frameDocument) return;
+  const menuLabels = { daily: '每日', monthly: '每月', tools: '其他' };
+  const label = menuLabels[menuName];
+  const menuButton = label && [...frameDocument.querySelectorAll('button')].find(button => button.textContent.trim() === label);
+  if (menuButton) menuButton.click();
+}
+
+function switchPage(pageName, options = {}) {
   const targetPage = document.getElementById('page-' + pageName);
   if (!targetPage) return;
   const nextHash = '#' + pageName;
@@ -5345,6 +5372,15 @@ function switchPage(pageName) {
   }
   if (document.body.classList.contains('home-mode') && window.PreviewMainDesign && typeof window.PreviewMainDesign.beforeSwitch === 'function') {
     window.PreviewMainDesign.beforeSwitch(pageName);
+  }
+
+  if (!options.fromHistory) {
+    const currentPageName = getActivePageName();
+    if (currentPageName === 'home') {
+      appNavigationStack.push({ type: 'home-menu', menu: getHomeMenuForTool(pageName) });
+    } else {
+      appNavigationStack.push({ type: 'page', page: currentPageName });
+    }
   }
 
   // 隐藏主界面，显示工具页面
@@ -5373,7 +5409,7 @@ function switchPage(pageName) {
   });
 }
 
-function goHome() {
+function goHome(options = {}) {
   const currentPage = document.querySelector('.page-container.active');
   if (currentPage && currentPage.id === 'page-home') return;
   document.body.classList.add('page-switching');
@@ -5406,6 +5442,20 @@ function goHome() {
       document.body.classList.remove('page-switching');
     });
   });
+}
+
+function goBackInApp() {
+  const previous = appNavigationStack.pop();
+  if (!previous) {
+    goHome();
+    return;
+  }
+  if (previous.type === 'page' && document.getElementById('page-' + previous.page)) {
+    switchPage(previous.page, { fromHistory: true });
+    return;
+  }
+  goHome({ fromHistory: true });
+  window.requestAnimationFrame(() => restoreHomeMenu(previous.menu));
 }
 
 // ==================== Toast 提示函数 ====================
@@ -8495,7 +8545,8 @@ document.addEventListener('DOMContentLoaded', function() {
       dueKey: formatDateKey(dueDate),
       dueLabel: formatDateLabel(dueDate),
       nextDueLabel: formatDateLabel(nextDueDate),
-      daysSinceDue: dayDiff - cycleOffset
+      daysSinceDue: dayDiff - cycleOffset,
+      isDueDay: dayDiff === cycleOffset
     };
   }
 
@@ -8507,12 +8558,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  function saveAcknowledgement(cycle) {
+  function saveAcknowledgement(cycle, date = new Date()) {
     try {
       localStorage.setItem(STORAGE_KEY, cycle.dueKey);
       localStorage.setItem(ACK_DETAIL_STORAGE_KEY, JSON.stringify({
         dueKey: cycle.dueKey,
-        date: getTodayKeyForStatus()
+        date: getTodayKeyForStatus(date)
       }));
     } catch (error) {
       console.warn('student export reminder acknowledgement skipped', error);
@@ -8572,7 +8623,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function getStudentExportCardStatus(date = new Date()) {
     const cycle = getReminderCycleForDate(date);
-    if (!cycle) {
+    if (!cycle || !cycle.isDueDay) {
       return { state: 'hidden' };
     }
     const todayKey = getTodayKeyForStatus(date);
@@ -8603,7 +8654,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function markStudentExportComplete(date = new Date()) {
     const cycle = getReminderCycleForDate(date);
-    if (!cycle) return false;
+    if (!cycle || !cycle.isDueDay) return false;
     writeCompletionStatus({
       completed: true,
       dueKey: cycle.dueKey,
@@ -8616,16 +8667,14 @@ document.addEventListener('DOMContentLoaded', function() {
     return true;
   }
 
-  function buildReminder(cycle) {
+  function buildReminder(cycle, date = new Date()) {
     const backdrop = document.createElement('div');
     backdrop.className = 'student-export-reminder-backdrop';
     backdrop.setAttribute('role', 'dialog');
     backdrop.setAttribute('aria-modal', 'true');
     backdrop.setAttribute('aria-labelledby', 'studentExportReminderTitle');
 
-    const timingText = cycle.daysSinceDue === 0
-      ? '今天就是这一轮的小小导出日。'
-      : '这一轮导出日已经过去 ' + cycle.daysSinceDue + ' 天啦，记得补处理。';
+    const timingText = '今天就是这一轮的小小导出日。';
 
     backdrop.innerHTML = `
       <div class="student-export-reminder-dialog">
@@ -8652,7 +8701,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     closeButton.addEventListener('click', function() {
       if (!checkbox.checked) return;
-      saveAcknowledgement(cycle);
+      saveAcknowledgement(cycle, date);
       broadcastStudentExportStatus();
       backdrop.remove();
       if (typeof showToast === 'function') {
@@ -8718,6 +8767,7 @@ document.addEventListener('DOMContentLoaded', function() {
   function showSecondaryReminderIfNeeded(date = new Date()) {
     const cycle = getReminderCycleForDate(date);
     broadcastStudentExportStatus(date);
+    if (!cycle || !cycle.isDueDay) return false;
     if (!shouldShowSecondaryReminder(cycle, date)) return false;
     if (document.querySelector('.student-export-reminder-backdrop')) return true;
     document.body.appendChild(buildSecondaryReminder(cycle, date));
@@ -8727,10 +8777,10 @@ document.addEventListener('DOMContentLoaded', function() {
   function showReminderIfNeeded(date = new Date()) {
     const cycle = getReminderCycleForDate(date);
     broadcastStudentExportStatus(date);
-    if (!cycle) return false;
+    if (!cycle || !cycle.isDueDay) return false;
     if (isAcknowledged(cycle)) return showSecondaryReminderIfNeeded(date);
     if (document.querySelector('.student-export-reminder-backdrop')) return true;
-    document.body.appendChild(buildReminder(cycle));
+    document.body.appendChild(buildReminder(cycle, date));
     return true;
   }
 
@@ -8957,8 +9007,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
 
-    const monthlyStatusObserver = new MutationObserver(scheduleMonthlyStatusRender);
-    monthlyStatusObserver.observe(document.documentElement, { childList: true, subtree: true });
+    window.setInterval(scheduleMonthlyStatusRender, 1000);
 
     function findStudentExportCard() {
       const titleNode = Array.from(document.querySelectorAll('h3')).find(node => node.textContent.trim() === '未反馈助手');
@@ -9042,7 +9091,8 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!window.StudentExportReminder || typeof window.StudentExportReminder.getReminderCycleForDate !== 'function') {
       return null;
     }
-    return window.StudentExportReminder.getReminderCycleForDate(new Date());
+    const cycle = window.StudentExportReminder.getReminderCycleForDate(new Date());
+    return cycle && cycle.isDueDay ? cycle : null;
   }
 
   function normalizeStudentExportStatus(status) {
