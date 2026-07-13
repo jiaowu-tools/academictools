@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.2.7
+// @version      1.2.8
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.2.7';
+  const SCRIPT_VERSION = '1.2.8';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -5764,6 +5764,7 @@
     }
 
     const physicalCampuses = Array.from(new Set(physicalItems.map((item) => item.physicalCampus).filter(Boolean)));
+    anomalies.push(...createOnlyOnlineDifferentCampusAnomalies(context, physicalCampuses));
     anomalies.push(...createTwoColorSandwichAnomalies(events, settings));
     if (physicalCampuses.length >= 3) {
       const first = physicalItems[0];
@@ -5782,6 +5783,31 @@
     }
 
     return dedupeAnomalies(anomalies);
+  }
+
+  function createOnlyOnlineDifferentCampusAnomalies(context, physicalCampuses) {
+    if (physicalCampuses.length !== 1) return [];
+    const physicalCampus = physicalCampuses[0];
+    const mismatchedOnlineItems = context.filter((item) => {
+      return item.isVirtual
+        && isOnlineCourseEvent(item.event)
+        && !isMeetingEvent(item.event)
+        && item.selectedCampus
+        && item.selectedCampus !== physicalCampus;
+    });
+    if (!mismatchedOnlineItems.length) return [];
+
+    const physicalItem = context.find((item) => item.physicalCampus === physicalCampus);
+    const firstMismatch = mismatchedOnlineItems[0];
+    return [createCampusAuditAnomaly({
+      kind: '检测：有线上课',
+      previous: physicalItem?.event || firstMismatch.event,
+      current: firstMismatch.event,
+      blockingEvents: mismatchedOnlineItems.slice(1).map((item) => item.event),
+      requiredMinutes: null,
+      availableMinutes: null,
+      reason: '只有线上课不在一个校区，建议修改'
+    })];
   }
 
   function isCampusAuditEvent(event) {
@@ -7018,8 +7044,12 @@
         run: assertSelfTestLeadingOnlineCourseMismatch
       },
       {
-        name: '校区：单侧线上不同校区但通勤足够不报错',
+        name: '检测：单侧线上不同校区但通勤足够仍提醒',
         run: assertSelfTestSingleSidedOnlineCampusCommuteEnough
+      },
+      {
+        name: '检测：全天同一校区且末节线上课为其他校区',
+        run: assertSelfTestOnlyOnlineDifferentCampusReminder
       },
       {
         name: '校区：单侧线上异色紧贴线下要报未改校区',
@@ -8429,6 +8459,53 @@
     ], makeSelfTestSettings());
     assertNoSelfTestAnomaly(result, '未改校区', '线上钱江到城建线下时间足够且只有两个校区时不应报未改校区');
     assertNoSelfTestAnomaly(result, '异常：时间不够跑校区', '线上钱江到城建线下时间足够时不应报跑校区时间不够');
+    assertHasSelfTestAnomaly(result, '检测：有线上课', /^只有线上课不在一个校区，建议修改$/);
+  }
+
+  function assertSelfTestOnlyOnlineDifferentCampusReminder() {
+    const offlineStartMinutes = [
+      9 * 60,
+      9 * 60 + 45,
+      10 * 60 + 30,
+      11 * 60 + 15,
+      13 * 60 + 15,
+      14 * 60,
+      14 * 60 + 45,
+      15 * 60 + 30,
+      16 * 60 + 15,
+      17 * 60
+    ];
+    const events = offlineStartMinutes.map((startMinutes, index) => makeSelfTestCourseEvent({
+      key: `repro-zijingang-${index + 1}`,
+      text: `紫金港线下课${index + 1}`,
+      campus: '紫金港校区',
+      hex: '#B290FE',
+      startMinutes,
+      endMinutes: startMinutes + 45,
+      start: formatMinutes(startMinutes),
+      end: formatMinutes(startMinutes + 45)
+    }));
+    events.push(makeSelfTestCourseEvent({
+      key: 'repro-final-online-chengjian',
+      text: 'CYD2607-068 强化听力',
+      type: 'online',
+      campus: '线上',
+      hex: '#FFBF41',
+      courseForm: '线上',
+      courseCampus: '城建校区',
+      detailCampus: '城建校区',
+      startMinutes: 19 * 60,
+      endMinutes: 19 * 60 + 45,
+      start: '19:00',
+      end: '19:45'
+    }));
+
+    const result = analyze(events, makeSelfTestSettings());
+    assertHasSelfTestAnomaly(result, '检测：有线上课', /^只有线上课不在一个校区，建议修改$/);
+    if (result.anomalies.filter((item) => item.kind === '检测：有线上课').length !== 1) {
+      throw new Error(`原始复现场景应且只应提示 1 条线上课校区检测，实际 ${result.anomalies.filter((item) => item.kind === '检测：有线上课').length} 条`);
+    }
+    assertNoSelfTestAnomaly(result, '异常：时间不够跑校区', '紫金港到城建线上课有足够通勤时间，不应误报时间不足');
   }
 
   function assertSelfTestSingleSidedOnlineCampusStickyMismatch() {
