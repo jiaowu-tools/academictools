@@ -5333,7 +5333,7 @@ function initToolSwitcher() {
 }
 
 // ==================== 页面切换功能 ====================
-const appNavigationStack = [];
+const APP_HISTORY_STATE_KEY = 'eduToolsNavigation';
 
 function getActivePageName() {
   const currentPage = document.querySelector('.page-container.active');
@@ -5350,24 +5350,80 @@ function getHomeMenuForTool(pageName) {
 }
 
 function restoreHomeMenu(menuName) {
-  if (!menuName || menuName === 'home') return;
+  if (!menuName) return;
   const frame = document.getElementById('figmaBuiltHomeFrame');
   const frameDocument = frame && (frame.contentDocument || (frame.contentWindow && frame.contentWindow.document));
   if (!frameDocument) return;
-  const menuLabels = { daily: '每日', monthly: '每月', tools: '其他' };
+  const menuLabels = { home: '主页面', daily: '每日', monthly: '每月', tools: '其他' };
   const label = menuLabels[menuName];
   const menuButton = label && [...frameDocument.querySelectorAll('button')].find(button => button.textContent.trim() === label);
-  if (menuButton) menuButton.click();
+  if (menuButton) {
+    frameDocument.documentElement.dataset.eduHistoryRestore = 'true';
+    menuButton.click();
+    window.setTimeout(() => {
+      delete frameDocument.documentElement.dataset.eduHistoryRestore;
+    }, 0);
+  }
+}
+
+function getAppHistoryState(state = history.state) {
+  return state && state[APP_HISTORY_STATE_KEY] ? state[APP_HISTORY_STATE_KEY] : null;
+}
+
+function getAppHistoryUrl(entry) {
+  const baseUrl = window.location.pathname + window.location.search;
+  if (entry.view === 'tool') return baseUrl + '#' + entry.page;
+  if (entry.view === 'home-menu' && entry.menu && entry.menu !== 'home') {
+    return baseUrl + '#menu-' + entry.menu;
+  }
+  return baseUrl;
+}
+
+function writeAppHistory(entry, mode = 'push') {
+  const current = getAppHistoryState();
+  const index = mode === 'push' ? ((current && current.index) || 0) + 1 : ((current && current.index) || 0);
+  const navigation = { ...entry, index };
+  const nextState = { ...(history.state || {}), [APP_HISTORY_STATE_KEY]: navigation };
+  history[mode === 'push' ? 'pushState' : 'replaceState'](nextState, '', getAppHistoryUrl(navigation));
+  return navigation;
+}
+
+function initializeAppHistory(target) {
+  const existing = getAppHistoryState();
+  if (existing) return existing;
+  const menuMatch = /^menu-(daily|monthly|tools)$/.exec(target || '');
+  const navigation = target && document.getElementById('page-' + target)
+    ? { view: 'tool', page: target }
+    : menuMatch
+      ? { view: 'home-menu', menu: menuMatch[1] }
+      : { view: 'home', menu: 'home' };
+  return writeAppHistory(navigation, 'replace');
+}
+
+function recordHomeMenuNavigation(menu) {
+  if (!['home', 'daily', 'monthly', 'tools'].includes(menu)) return;
+  if (getActivePageName() !== 'home') return;
+  const current = getAppHistoryState();
+  const view = menu === 'home' ? 'home' : 'home-menu';
+  if (current && current.view === view && current.menu === menu) return;
+  writeAppHistory({ view, menu });
+}
+
+function applyAppHistoryState(navigation) {
+  if (!navigation) return;
+  if (navigation.view === 'tool' && document.getElementById('page-' + navigation.page)) {
+    switchPage(navigation.page, { fromHistory: true });
+    return;
+  }
+  const menu = navigation.view === 'home-menu' ? navigation.menu : 'home';
+  goHome({ fromHistory: true });
+  window.requestAnimationFrame(() => restoreHomeMenu(menu));
 }
 
 function switchPage(pageName, options = {}) {
   const targetPage = document.getElementById('page-' + pageName);
   if (!targetPage) return;
-  const nextHash = '#' + pageName;
   if (targetPage.classList.contains('active')) {
-    if (window.location.hash !== nextHash) {
-      history.replaceState(null, '', window.location.pathname + window.location.search + nextHash);
-    }
     return;
   }
   if (document.body.classList.contains('home-mode') && window.PreviewMainDesign && typeof window.PreviewMainDesign.beforeSwitch === 'function') {
@@ -5377,10 +5433,13 @@ function switchPage(pageName, options = {}) {
   if (!options.fromHistory) {
     const currentPageName = getActivePageName();
     if (currentPageName === 'home') {
-      appNavigationStack.push({ type: 'home-menu', menu: getHomeMenuForTool(pageName) });
-    } else {
-      appNavigationStack.push({ type: 'page', page: currentPageName });
+      const menu = getHomeMenuForTool(pageName);
+      const currentHistory = getAppHistoryState();
+      if (!currentHistory || currentHistory.view !== 'home-menu' || currentHistory.menu !== menu) {
+        writeAppHistory({ view: 'home-menu', menu });
+      }
     }
+    writeAppHistory({ view: 'tool', page: pageName });
   }
 
   // 隐藏主界面，显示工具页面
@@ -5396,9 +5455,6 @@ function switchPage(pageName, options = {}) {
   
   // 切换页面显示
   targetPage.classList.add('active');
-  if (window.location.hash !== nextHash) {
-    history.replaceState(null, '', window.location.pathname + window.location.search + nextHash);
-  }
   
   // 滚动到顶部
   window.requestAnimationFrame(() => {
@@ -5411,7 +5467,11 @@ function switchPage(pageName, options = {}) {
 
 function goHome(options = {}) {
   const currentPage = document.querySelector('.page-container.active');
-  if (currentPage && currentPage.id === 'page-home') return;
+  if (currentPage && currentPage.id === 'page-home') {
+    if (!options.fromHistory) recordHomeMenuNavigation('home');
+    return;
+  }
+  if (!options.fromHistory) writeAppHistory({ view: 'home', menu: 'home' });
   document.body.classList.add('page-switching');
   if (currentPage) currentPage.classList.remove('active');
   
@@ -5425,10 +5485,6 @@ function goHome(options = {}) {
   document.getElementById('backHomeBtn').style.display = 'none';
   closeToolSwitchers();
   updateToolNavigation(null);
-  if (window.location.hash) {
-    history.replaceState(null, '', window.location.pathname + window.location.search);
-  }
-  
   // 取消导航栏高亮
   document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.remove('active');
@@ -5445,18 +5501,21 @@ function goHome(options = {}) {
 }
 
 function goBackInApp() {
-  const previous = appNavigationStack.pop();
-  if (!previous) {
-    goHome();
+  const currentHistory = getAppHistoryState();
+  if (currentHistory && currentHistory.index > 0) {
+    history.back();
     return;
   }
-  if (previous.type === 'page' && document.getElementById('page-' + previous.page)) {
-    switchPage(previous.page, { fromHistory: true });
-    return;
-  }
-  goHome({ fromHistory: true });
-  window.requestAnimationFrame(() => restoreHomeMenu(previous.menu));
+  const menu = getHomeMenuForTool(getActivePageName());
+  const fallback = writeAppHistory({ view: menu === 'home' ? 'home' : 'home-menu', menu }, 'replace');
+  applyAppHistoryState(fallback);
 }
+
+window.addEventListener('popstate', function(event) {
+  const navigation = getAppHistoryState(event.state);
+  if (!navigation) return;
+  applyAppHistoryState(navigation);
+});
 
 // ==================== Toast 提示函数 ====================
 function showToast(message, type = 'info', duration = 3000) {
@@ -8933,8 +8992,26 @@ document.addEventListener('DOMContentLoaded', function() {
       feedback: '未反馈助手',
       workload: '教师课时核算'
     };
+    const HOME_MENU_LABELS = {
+      '主页面': 'home',
+      '每日': 'daily',
+      '每月': 'monthly',
+      '其他': 'tools'
+    };
     let currentMonthlyStatus = null;
     let monthlyStatusRenderQueued = false;
+
+    document.addEventListener('click', event => {
+      if (document.documentElement.dataset.eduHistoryRestore === 'true') return;
+      const button = event.target.closest && event.target.closest('button');
+      if (!button) return;
+      const label = button.textContent.trim();
+      let menu = HOME_MENU_LABELS[label];
+      if (!menu && /每日/.test(label)) menu = 'daily';
+      if (!menu && /(每月|月底)/.test(label)) menu = 'monthly';
+      if (!menu && /其他/.test(label)) menu = 'tools';
+      if (menu) window.parent?.postMessage({ type: 'figma-home:menu', menu }, '*');
+    }, true);
 
     function getMonthKey() {
       const now = new Date();
@@ -9804,6 +9881,10 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       return;
     }
+    if (data.type === 'figma-home:menu') {
+      recordHomeMenuNavigation(data.menu);
+      return;
+    }
     if (data.type !== 'figma-home:navigate') return;
     const page = data.page;
     if (page && typeof switchPage === 'function' && document.getElementById('page-' + page)) {
@@ -9817,8 +9898,12 @@ document.addEventListener('DOMContentLoaded', function() {
   function initFigmaBuiltHome() {
     loadFigmaBuiltHomeFrame();
     const target = window.location.hash ? window.location.hash.slice(1) : '';
+    const initialNavigation = initializeAppHistory(target);
     if (target && typeof switchPage === 'function' && document.getElementById('page-' + target)) {
-      switchPage(target);
+      switchPage(target, { fromHistory: true });
+    } else if (initialNavigation.view === 'home-menu') {
+      const frame = document.getElementById('figmaBuiltHomeFrame');
+      if (frame) frame.addEventListener('load', () => restoreHomeMenu(initialNavigation.menu), { once: true });
     }
     applyDailyStatusLocally(readDailyStatus());
     applyMonthlyStatusLocally(readMonthlyStatus());
