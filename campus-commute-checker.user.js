@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.2.4
+// @version      1.2.5
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.2.4';
+  const SCRIPT_VERSION = '1.2.5';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -5775,7 +5775,9 @@
         requiredMinutes: null,
         availableMinutes: null,
         blockingEvents: physicalItems.slice(1, -1).map((item) => item.event),
-        reason: `同一天出现 ${physicalCampuses.length} 个实体校区：${physicalCampuses.join('、')}，提示老师跑了三个校区`
+        reason: context.some((item) => item.isVirtual)
+          ? `同一天出现 ${physicalCampuses.length} 个实体校区：${physicalCampuses.join('、')}，提示老师跑了三个校区`
+          : '老师跑了三次校区，注意查看'
       }));
     }
 
@@ -8619,13 +8621,13 @@
   function assertSelfTestThreeCampusesWithCommuteShort() {
     const result = analyze(makeSelfTestThreeCampusEvents(13 * 60 + 15), makeSelfTestSettings());
     assertHasSelfTestAnomaly(result, '异常：时间不够跑校区', /钱江校区.*紫金港校区/);
-    assertHasSelfTestAnomaly(result, '老师跑了三个校区', /城建校区、钱江校区、紫金港校区/);
+    assertHasSelfTestAnomaly(result, '老师跑了三个校区', /^老师跑了三次校区，注意查看$/);
   }
 
   function assertSelfTestThreeCampusesOnly() {
     const result = analyze(makeSelfTestThreeCampusEvents(14 * 60 + 5), makeSelfTestSettings());
     assertNoSelfTestAnomaly(result, '异常：时间不够跑校区', '钱江到紫金港 110 分钟应足够');
-    assertHasSelfTestAnomaly(result, '老师跑了三个校区', /城建校区、钱江校区、紫金港校区/);
+    assertHasSelfTestAnomaly(result, '老师跑了三个校区', /^老师跑了三次校区，注意查看$/);
   }
 
   function assertSelfTestVirtualBetweenCampusesCommuteShort() {
@@ -8683,7 +8685,7 @@
       makeSelfTestMeetingEvent('meeting-chengjian', '城建会议', '城建校区', '#FFBF41', 10 * 60 + 40, 11 * 60 + 25),
       makeSelfTestMeetingEvent('meeting-zijingang', '紫金会议', '紫金港校区', '#B290FE', 14 * 60 + 5, 14 * 60 + 50)
     ], makeSelfTestSettings());
-    assertHasSelfTestAnomaly(result, '老师跑了三个校区', /钱江校区、城建校区、紫金港校区/);
+    assertHasSelfTestAnomaly(result, '老师跑了三个校区', /^老师跑了三次校区，注意查看$/);
   }
 
   function makeSelfTestThreeCampusEvents(zijingangStartMinutes) {
