@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.2.9
+// @version      1.3.0
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.2.9';
+  const SCRIPT_VERSION = '1.3.0';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2296,6 +2296,14 @@
 
   function parseSmartRecurringMonths(text, now = new Date()) {
     const source = String(text || '');
+    const naturalRangeMatch = source.match(/(?:(\d{4})年)?(\d{1,2})月(?:开始|起)?(?:到|至)(?:(\d{4})年)?(\d{1,2})月底?(?:结束|为止)?/u);
+    if (naturalRangeMatch) {
+      const startYear = naturalRangeMatch[1] ? Number(naturalRangeMatch[1]) : now.getFullYear();
+      const startMonth = Number(naturalRangeMatch[2]);
+      const endYear = naturalRangeMatch[3] ? Number(naturalRangeMatch[3]) : inferRecurringEndYear(startYear, startMonth, Number(naturalRangeMatch[4]));
+      const endMonth = Number(naturalRangeMatch[4]);
+      return expandRecurringMonths(startYear, startMonth, endYear, endMonth);
+    }
     const rangeMatch = source.match(/(?:(\d{4})年)?(\d{1,2})月(?:和|及|、|,|至|到|-|~|～)(?:(\d{4})年)?(\d{1,2})月/u);
     if (rangeMatch) {
       const startYear = rangeMatch[1] ? Number(rangeMatch[1]) : now.getFullYear();
@@ -2656,7 +2664,7 @@
 
   function parseSmartMeetingLeadingName(text) {
     const source = String(text || '').trim();
-    const match = source.match(/^\s*([^:：\n\r,，;；]+?)\s*[:：]\s*(?=(?:(?:\d{4}年)?\d{1,2}月(?:开始|起)?\s*)?每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7])/u);
+    const match = source.match(/^\s*([^:：\n\r,，;；]+?)\s*[:：]\s*(?=(?:(?:(?:\d{4}年)?\d{1,2}月(?:开始|起)?(?:到|至)(?:(?:\d{4}年)?\d{1,2}月底?(?:结束|为止)?)|(?:\d{4}年)?\d{1,2}月(?:开始|起)?\s*)[，,、\s]*)?每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7])/u);
     return match ? cleanSmartMeetingName(match[1]) : '';
   }
 
@@ -2747,6 +2755,7 @@
     return String(text || '')
       .replace(/^.*?(?:排一下|排一个|排一次|排个|安排一下|安排一个|安排一次|安排个|安排|排)\s*/u, '')
       .replace(/^(?:会议|家长会)?(?:名称|主题)\s*[:：]\s*/u, '')
+      .replace(/^会议\s*[:：]\s*/u, '')
       .replace(/^\d{4}[年\/.-]\d{1,2}(?:月|[\/.-])\d{1,2}(?:日|号)?\s*(?:的)?\s*(?:上午|下午|晚上|晚间|中午|早上)?/u, '')
       .replace(/^\d{1,2}(?:月|[\/.-])\d{1,2}(?:日|号)?\s*(?:的)?\s*(?:上午|下午|晚上|晚间|中午|早上)?/u, '')
       .replace(/^\s*(?:上午|下午|晚上|晚间|中午|早上)/u, '');
@@ -2763,7 +2772,9 @@
       /时间\s*[:：]?/u,
       /(?:参会人员|参与人员|参加人员|出席人员|参会人|参与人|参加人|出席人|参会|参与|参加|出席)\s*[:：]?/u,
       /(?:在)?(?:(?:\d{4})年)?\d{1,2}月(?:和|及|、|,|至|到|-|~|～)(?:(?:\d{4})年)?\d{1,2}月(?:的)?每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7]/u,
+      /(?:(?:\d{4})年)?\d{1,2}月(?:开始|起)?(?:到|至)(?:(?:\d{4})年)?\d{1,2}月底?(?:结束|为止)?[，,、\s]*(?:的)?每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7]/u,
       /(?:在)?(?:(?:\d{4})年)?\d{1,2}月(?:的)?每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7]/u,
+      /(?:^|[,，;；])\s*每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7]/u,
       new RegExp(`${getSmartMeetingDatePatternSource()}\\s*(?:的|[,，])?\\s*(?:上午|下午|晚上|晚间|中午|早上)?\\s*${getSmartMeetingClockPatternSource()}`, 'u'),
       /(?:今天|明天|后天|大后天)(?:上午|下午|晚上|晚间|中午|早上)?(?:\d{1,2}|[零〇一二两三四五六七八九十两]{1,3})[:：点时](?:[0-5]?\d|[零〇一二两三四五六七八九十两]{1,3}|半)?(?:分)?/u,
       /(?:^|[,，])(?:上午|下午|晚上|晚间|中午|早上)?(?:\d{1,2}|[零〇一二两三四五六七八九十两]{1,3})[:：点时](?:[0-5]?\d|[零〇一二两三四五六七八九十两]{1,3}|半)?(?:分)?/u,
@@ -7217,6 +7228,24 @@
     });
     if (getMeetingDraftClassroomPrefixes(supervisorRecurring).length) {
       throw new Error(`未识别校区时不应自动选择 M1001 教室，实际：${getMeetingDraftClassroomPrefixes(supervisorRecurring).join(',')}`);
+    }
+    const supervisorNaturalRange = parseSmartMeetingText('主管会：8月开始到12月底结束，每周二9:00-10:35（M1001）\n参会人：雪梨', {
+      now: new Date(2026, 6, 15, 9, 0)
+    });
+    if (!supervisorNaturalRange.ok || supervisorNaturalRange.meetingName !== '主管会' || supervisorNaturalRange.date !== '2026-08-04' || supervisorNaturalRange.endDate !== '2026-12-29' || supervisorNaturalRange.startTime !== '09:00' || supervisorNaturalRange.endTime !== '10:35' || supervisorNaturalRange.durationMinutes !== 95 || supervisorNaturalRange.meetingMode !== 'offline' || supervisorNaturalRange.meetingCampus || supervisorNaturalRange.teachers.join(',') !== '张佳颖') {
+      throw new Error(`主管会自然月份范围回归失败：${JSON.stringify({ meetingName: supervisorNaturalRange.meetingName, date: supervisorNaturalRange.date, endDate: supervisorNaturalRange.endDate, startTime: supervisorNaturalRange.startTime, endTime: supervisorNaturalRange.endTime, durationMinutes: supervisorNaturalRange.durationMinutes, meetingMode: supervisorNaturalRange.meetingMode, meetingCampus: supervisorNaturalRange.meetingCampus, teachers: supervisorNaturalRange.teachers })}`);
+    }
+    const supervisorNaturalIntro = parseSmartMeetingText('排一个会议：主管会8月开始到12月底结束每周二9:00-10:35', {
+      now: new Date(2026, 6, 15, 9, 0)
+    });
+    if (!supervisorNaturalIntro.ok || supervisorNaturalIntro.meetingName !== '主管会' || supervisorNaturalIntro.date !== '2026-08-04' || supervisorNaturalIntro.endDate !== '2026-12-29' || supervisorNaturalIntro.startTime !== '09:00' || supervisorNaturalIntro.endTime !== '10:35' || supervisorNaturalIntro.durationMinutes !== 95) {
+      throw new Error(`排一个会议自然月份范围回归失败：${JSON.stringify({ meetingName: supervisorNaturalIntro.meetingName, date: supervisorNaturalIntro.date, endDate: supervisorNaturalIntro.endDate, startTime: supervisorNaturalIntro.startTime, endTime: supervisorNaturalIntro.endTime, durationMinutes: supervisorNaturalIntro.durationMinutes })}`);
+    }
+    const supervisorNameBeforeWeekday = parseSmartMeetingText('给我从8月开始到12月开始排主管会，每周二09:00-10:35', {
+      now: new Date(2026, 6, 15, 9, 0)
+    });
+    if (!supervisorNameBeforeWeekday.ok || supervisorNameBeforeWeekday.meetingName !== '主管会' || supervisorNameBeforeWeekday.date !== '2026-08-04' || supervisorNameBeforeWeekday.endDate !== '2026-12-29' || supervisorNameBeforeWeekday.startTime !== '09:00' || supervisorNameBeforeWeekday.endTime !== '10:35' || supervisorNameBeforeWeekday.durationMinutes !== 95 || supervisorNameBeforeWeekday.meetingMode !== 'offline' || supervisorNameBeforeWeekday.meetingCampus || supervisorNameBeforeWeekday.teachers.length) {
+      throw new Error(`周期前会议名称回归失败：${JSON.stringify({ meetingName: supervisorNameBeforeWeekday.meetingName, date: supervisorNameBeforeWeekday.date, endDate: supervisorNameBeforeWeekday.endDate, startTime: supervisorNameBeforeWeekday.startTime, endTime: supervisorNameBeforeWeekday.endTime, durationMinutes: supervisorNameBeforeWeekday.durationMinutes, meetingMode: supervisorNameBeforeWeekday.meetingMode, meetingCampus: supervisorNameBeforeWeekday.meetingCampus, teachers: supervisorNameBeforeWeekday.teachers })}`);
     }
     const twoLessonMeeting = parseSmartMeetingText('7月每周二9:00，两课时，主管培训，参会人：雪梨', {
       now: new Date(2026, 6, 1, 9, 0)
