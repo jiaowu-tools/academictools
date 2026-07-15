@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.2.8
+// @version      1.2.9
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.2.8';
+  const SCRIPT_VERSION = '1.2.9';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2400,6 +2400,13 @@
 
   function parseSmartMeetingDurationMinutes(text) {
     const normalized = stripSmartMeetingClockText(String(text || ''));
+    const lessonMatch = normalized.match(/([0-9一二两三四五六七八九十]{1,3})\s*课时/u);
+    if (lessonMatch) {
+      const lessonCount = parseSmartMeetingTimeNumber(lessonMatch[1]);
+      if (Number.isFinite(lessonCount) && lessonCount > 0) {
+        return clampNumber(lessonCount * 45 + Math.max(0, lessonCount - 1) * 5, getDefaultSmartMeetingDurationMinutes(), 5, 240);
+      }
+    }
     const durationMatch = normalized.match(/(?:时长|持续|开|排|约|预计|大约)(\d{1,3})\s*(?:分钟|min|mins|minute|minutes)/i)
       || normalized.match(/(\d{1,3})\s*(?:分钟|min|mins|minute|minutes)(?:左右|会议|家长会)?/i);
     if (durationMatch) return clampNumber(Number(durationMatch[1]), getDefaultSmartMeetingDurationMinutes(), 5, 240);
@@ -2419,7 +2426,7 @@
 
   function findSmartMeetingClockMatches(text) {
     const source = String(text || '');
-    const pattern = /(^|[^\d零〇一二两三四五六七八九十])((?:[01]?\d|2[0-3]|[零〇一二两三四五六七八九十两]{1,3}))\s*([:：点时])\s*([0-5]?\d|[零〇一二两三四五六七八九十两]{1,3})?\s*(半|分)?/gu;
+    const pattern = /(^|每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7]|[^\d零〇一二两三四五六七八九十])((?:[01]?\d|2[0-3]|[零〇一二两三四五六七八九十两]{1,3}))\s*([:：点时])\s*([0-5]?\d|[零〇一二两三四五六七八九十两]{1,3})?\s*(半|分)?/gu;
     const matches = [];
     let match;
     while ((match = pattern.exec(source))) {
@@ -2636,6 +2643,8 @@
   function parseSmartMeetingName(rawText, compactText) {
     const explicitName = parseSmartMeetingExplicitName(rawText) || parseSmartMeetingExplicitName(compactText);
     if (explicitName) return explicitName;
+    const leadingName = parseSmartMeetingLeadingName(rawText);
+    if (leadingName) return leadingName;
     const namedAfterTime = parseSmartMeetingNameAfterClock(rawText);
     if (namedAfterTime) return namedAfterTime;
     const text = String(rawText || compactText || '').trim();
@@ -2643,6 +2652,12 @@
     const afterIntro = trimSmartMeetingNameIntro(text);
     const beforeDetails = cutSmartMeetingNameBeforeDetails(afterIntro);
     return cleanSmartMeetingName(beforeDetails);
+  }
+
+  function parseSmartMeetingLeadingName(text) {
+    const source = String(text || '').trim();
+    const match = source.match(/^\s*([^:：\n\r,，;；]+?)\s*[:：]\s*(?=(?:(?:\d{4}年)?\d{1,2}月(?:开始|起)?\s*)?每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7])/u);
+    return match ? cleanSmartMeetingName(match[1]) : '';
   }
 
   function parseSmartMeetingExplicitName(text) {
@@ -7181,6 +7196,34 @@
   }
 
   function assertSelfTestSmartMeetingTextParsing() {
+    const supervisorRecurring = parseSmartMeetingText('主管会：8月开始每周二9:00-10:35（M1001）\n参会人：雪梨', {
+      now: new Date(2026, 6, 15, 9, 0)
+    });
+    if (!supervisorRecurring.ok) throw new Error(`主管会原文回归识别失败：${supervisorRecurring.message}`);
+    const supervisorExpected = {
+      date: '2026-08-04',
+      endDate: '2026-08-25',
+      startTime: '09:00',
+      endTime: '10:35',
+      durationMinutes: 95,
+      meetingName: '主管会',
+      meetingMode: 'offline',
+      meetingCampus: '',
+      teachers: '张佳颖'
+    };
+    Object.entries(supervisorExpected).forEach(([key, value]) => {
+      const actual = key === 'teachers' ? supervisorRecurring.teachers.join(',') : supervisorRecurring[key];
+      if (actual !== value) throw new Error(`主管会原文 ${key} 应为 ${value}，实际 ${actual}`);
+    });
+    if (getMeetingDraftClassroomPrefixes(supervisorRecurring).length) {
+      throw new Error(`未识别校区时不应自动选择 M1001 教室，实际：${getMeetingDraftClassroomPrefixes(supervisorRecurring).join(',')}`);
+    }
+    const twoLessonMeeting = parseSmartMeetingText('7月每周二9:00，两课时，主管培训，参会人：雪梨', {
+      now: new Date(2026, 6, 1, 9, 0)
+    });
+    if (!twoLessonMeeting.ok || twoLessonMeeting.startTime !== '09:00' || twoLessonMeeting.endTime !== '10:35' || twoLessonMeeting.durationMinutes !== 95) {
+      throw new Error(`两课时应按 95 分钟计算，实际：${twoLessonMeeting.startTime}-${twoLessonMeeting.endTime}/${twoLessonMeeting.durationMinutes}`);
+    }
     const draft = parseSmartMeetingText('7.9晚上排一个【沈悦颜】家长会，18：30城西线下，参会人：沈豪杰+毛婧', {
       now: new Date(2026, 0, 1)
     });
