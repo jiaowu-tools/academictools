@@ -1814,6 +1814,28 @@ body:not(.home-mode) .back-home-btn {
   -webkit-backdrop-filter: blur(18px) saturate(1.15);
 }
 
+body:not(.home-mode) .back-home-icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: #df9565;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 1px 1px rgba(205, 126, 79, 0.18));
+}
+
+body:not(.home-mode) .back-home-icon-wall {
+  fill: #fff1d6;
+  stroke: #dda06f;
+}
+
+body:not(.home-mode) .back-home-icon-door {
+  fill: #ffd0b5;
+  stroke: #d9855e;
+}
+
 body:not(.home-mode) .back-home-btn:hover {
   background: rgba(255, 255, 255, 0.56);
   color: #1d463a;
@@ -4930,9 +4952,9 @@ body:not(.home-mode) .top-tool-switcher.is-open:hover .tool-switch-menu {
       <span>教师课时核算</span>
     </div>
   </div>
-  <button class="back-home-btn" id="backHomeBtn" onclick="goBackInApp()" style="display:none;">
-    <span>←</span>
-    <span>返回上一级</span>
+  <button class="back-home-btn" id="backHomeBtn" onclick="goHome()" style="display:none;">
+    <svg class="back-home-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.6 12 3.4l8.5 7.2"></path><path class="back-home-icon-wall" d="M5.7 9.5v11h12.6v-11"></path><path class="back-home-icon-door" d="M9.4 20.5v-6.2h5.2v6.2"></path></svg>
+    <span>返回主界面</span>
   </button>
 </nav>
 
@@ -5498,17 +5520,6 @@ function goHome(options = {}) {
       document.body.classList.remove('page-switching');
     });
   });
-}
-
-function goBackInApp() {
-  const currentHistory = getAppHistoryState();
-  if (currentHistory && currentHistory.index > 0) {
-    history.back();
-    return;
-  }
-  const menu = getHomeMenuForTool(getActivePageName());
-  const fallback = writeAppHistory({ view: menu === 'home' ? 'home' : 'home-menu', menu }, 'replace');
-  applyAppHistoryState(fallback);
 }
 
 window.addEventListener('popstate', function(event) {
