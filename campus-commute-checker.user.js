@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.3.0
+// @version      1.3.1
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.3.0';
+  const SCRIPT_VERSION = '1.3.1';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2671,8 +2671,8 @@
   function parseSmartMeetingExplicitName(text) {
     const source = String(text || '').trim();
     if (!source) return '';
-    const labeled = source.match(/(?:会议|家长会)?(?:名称|主题)\s*[:：]\s*([^,，;；。\n\r]+)/u);
-    if (labeled) return cleanSmartMeetingName(cutSmartMeetingExplicitNameValue(labeled[1]));
+    const labeled = source.match(/(?:(?:会议|家长会)?(?:名称|主题)|会议)\s*[:：]\s*([^,，;；。\n\r]+)/u);
+    if (labeled) return cleanSmartMeetingName(cutSmartMeetingNameBeforeDetails(cutSmartMeetingExplicitNameValue(labeled[1])));
     const bracket = source.match(/[【\[]([^】\]\n\r]+)[】\]]/u);
     if (!bracket) return '';
     if (isSmartMeetingDateOnly(bracket[1])) return '';
@@ -7710,6 +7710,27 @@
     if (!unlabeledNamesMeeting.ok) throw new Error(`无标签参会人整句识别失败：${unlabeledNamesMeeting.message}`);
     if (unlabeledNamesMeeting.teachers.join(',') !== '张佳颖,陈江华,滕艳兰') {
       throw new Error(`无标签参会人整句应只识别姓名，实际：${unlabeledNamesMeeting.teachers.join(',')}`);
+    }
+    const meetingLabelWithUnlabeledNames = parseSmartMeetingText('会议：城西业务小会\n时间：7月30号13：30-15：30\n张佳颖++毛婧+素清', {
+      now: new Date(2026, 6, 18)
+    });
+    const meetingLabelExpected = {
+      meetingName: '城西业务小会',
+      date: '2026-07-30',
+      startTime: '13:30',
+      endTime: '15:30',
+      durationMinutes: 120,
+      meetingMode: 'offline',
+      timePeriod: '下午',
+      meetingCampus: '紫金港',
+      teachers: '张佳颖,毛婧,素清'
+    };
+    Object.entries(meetingLabelExpected).forEach(([key, value]) => {
+      const actual = key === 'teachers' ? meetingLabelWithUnlabeledNames.teachers.join(',') : meetingLabelWithUnlabeledNames[key];
+      if (actual !== value) throw new Error(`会议标签无参会人标签格式 ${key} 应为 ${value}，实际 ${actual}`);
+    });
+    if (getMeetingDraftClassroomPrefixes(meetingLabelWithUnlabeledNames).join(',') !== 'M') {
+      throw new Error(`会议标签城西业务小会应生成 M 教室候选，实际：${getMeetingDraftClassroomPrefixes(meetingLabelWithUnlabeledNames).join(',')}`);
     }
     const relativeOriLessonMeeting = parseSmartMeetingText('帮我排一下 ori批课 \n明天下午14:00-17:00\n席佳颖 +利锦 \n先城西线下排个教室', {
       now: new Date(2026, 6, 7)
