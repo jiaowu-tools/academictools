@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.3.1
+// @version      1.3.3
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,13 +15,13 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.3.1';
+  const SCRIPT_VERSION = '1.3.3';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
   const ATTENDEE_HELPER_POSITION_STORAGE_KEY = 'campus-commute-checker.attendeeHelperPosition';
   const MEETING_DRAFT_STORAGE_KEY = 'campus-commute-checker.meetingDraft';
-  const MEETING_ADD_PATH = '/meeting/addForm';
+  const MEETING_ADD_PATH = '/meeting/add';
   const MEETING_NAME_STORAGE_KEY = 'campus-commute-checker.lastMeetingName';
   const SUPERVISOR_SCHEDULE_STORAGE_KEY = 'campus-commute-checker.supervisorSchedule';
   const SUPERVISOR_TEST_SCHEDULE_STORAGE_KEY = 'campus-commute-checker.supervisorTest.schedule';
@@ -2533,7 +2533,7 @@
     const patterns = [
       /(?:^|[^\d])(?:\d{4}[年\/.-])?\d{1,2}\s*(?:月|[\/.-])\s*\d{1,2}\s*(?:日|号)?\s*([\u4e00-\u9fa5A-Za-z0-9]{1,8})老师的(?:会议|家长会|会)/u,
       /(?:今天|明天|后天|大后天)\s*([\u4e00-\u9fa5A-Za-z0-9]{1,8})老师的(?:会议|家长会|会)/u,
-      /(?:^|[\n\r,，;；。])\s*([\u4e00-\u9fa5A-Za-z0-9]{1,8})老师的(?:会议|家长会|会)/u
+      /(?:^|[\n\r,，;；。])\s*([\u4e00-\u9fa5A-Za-z0-9]{1,8})老师的(?:会议|家长会|会)?(?=\s*(?:[,，;；。]|$))/u
     ];
     for (const pattern of patterns) {
       const match = source.match(pattern);
@@ -2802,6 +2802,8 @@
       .replace(/([】\]])\s*(?:\[[^\]\n\r]{1,8}\]\s*)+$/u, '$1')
       .trim()
       .replace(/^[,，;；。]+|[,，;；。]+$/g, '');
+    if (/^(?:帮我|请|麻烦|辛苦)?占空$/u.test(cleaned)) return '占空';
+    if (/^[\u4e00-\u9fa5A-Za-z]{1,8}占空$/u.test(cleaned)) return cleaned;
     return normalizeSmartMeetingNaturalName(cleaned);
   }
 
@@ -6890,6 +6892,10 @@
         run: assertSelfTestVersionSync
       },
       {
+        name: '会议草稿：色块图转到单时间会议页',
+        run: assertSelfTestSingleMeetingDraftPath
+      },
+      {
         name: '占休：纯节日名即使被识别为线上占用也不占休',
         run: () => assertSelfTestDayOff(false, {
           text: '端午节',
@@ -7149,6 +7155,16 @@
     }
     if (/setNativeInputValue\(input,\s*prefix\)/.test(source)) {
       throw new Error('教室下拉不支持输入筛选，不应向教室输入框写入前缀');
+    }
+  }
+
+  function assertSelfTestSingleMeetingDraftPath() {
+    const url = new URL(MEETING_ADD_PATH, 'https://www.antiedu.tech/');
+    if (url.pathname !== '/meeting/add') {
+      throw new Error(`色块图会议草稿必须转到单时间会议页 /meeting/add，实际：${url.pathname}`);
+    }
+    if (url.pathname === '/meeting/addForm') {
+      throw new Error('色块图会议草稿不应转到多时间会议页 /meeting/addForm');
     }
   }
 
@@ -7732,6 +7748,35 @@
     if (getMeetingDraftClassroomPrefixes(meetingLabelWithUnlabeledNames).join(',') !== 'M') {
       throw new Error(`会议标签城西业务小会应生成 M 教室候选，实际：${getMeetingDraftClassroomPrefixes(meetingLabelWithUnlabeledNames).join(',')}`);
     }
+    const occupyPossessiveTeacher = parseSmartMeetingText('7月25日 9:00-10:35帮我占空\n郝崇研老师的，钱江线下', {
+      now: new Date(2026, 6, 20)
+    });
+    const occupyExpected = {
+      meetingName: '占空',
+      date: '2026-07-25',
+      startTime: '09:00',
+      endTime: '10:35',
+      durationMinutes: 95,
+      meetingMode: 'offline',
+      timePeriod: '上午',
+      meetingCampus: '钱江校区',
+      teachers: '郝崇研'
+    };
+    Object.entries(occupyExpected).forEach(([key, value]) => {
+      const actual = key === 'teachers' ? occupyPossessiveTeacher.teachers.join(',') : occupyPossessiveTeacher[key];
+      if (actual !== value) throw new Error(`占空老师格式 ${key} 应为 ${value}，实际 ${actual}`);
+    });
+    if (getMeetingDraftClassroomPrefixes(occupyPossessiveTeacher).join(',') !== 'M') {
+      throw new Error(`占空老师钱江线下应生成 M 教室候选，实际：${getMeetingDraftClassroomPrefixes(occupyPossessiveTeacher).join(',')}`);
+    }
+    ['雨娟', '梦瑶'].forEach((name) => {
+      const namedOccupy = parseSmartMeetingText(`7月25日9:00-10:35${name}占空，钱江线下`, {
+        now: new Date(2026, 6, 20)
+      });
+      if (!namedOccupy.ok || namedOccupy.meetingName !== `${name}占空` || namedOccupy.date !== '2026-07-25' || namedOccupy.startTime !== '09:00' || namedOccupy.endTime !== '10:35' || namedOccupy.durationMinutes !== 95 || namedOccupy.meetingMode !== 'offline' || namedOccupy.meetingCampus !== '钱江校区') {
+        throw new Error(`${name}占空格式识别失败：${JSON.stringify({ meetingName: namedOccupy.meetingName, date: namedOccupy.date, startTime: namedOccupy.startTime, endTime: namedOccupy.endTime, durationMinutes: namedOccupy.durationMinutes, meetingMode: namedOccupy.meetingMode, meetingCampus: namedOccupy.meetingCampus })}`);
+      }
+    });
     const relativeOriLessonMeeting = parseSmartMeetingText('帮我排一下 ori批课 \n明天下午14:00-17:00\n席佳颖 +利锦 \n先城西线下排个教室', {
       now: new Date(2026, 6, 7)
     });
