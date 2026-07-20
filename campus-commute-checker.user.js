@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.3.4
+// @version      1.3.5
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.3.4';
+  const SCRIPT_VERSION = '1.3.5';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -454,6 +454,70 @@
         display: block;
         font-size: 18px;
         line-height: 1.2;
+      }
+
+      .ccheck-commute-query {
+        margin-top: 8px;
+        padding: 10px;
+        background: #fffaf2;
+        border: 1px solid #fed7aa;
+        border-radius: 6px;
+      }
+
+      .ccheck-commute-tools {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .ccheck-commute-field-date {
+        grid-column: 1 / -1;
+      }
+
+      .ccheck-commute-field-date input {
+        width: 150px;
+        max-width: 100%;
+      }
+
+      .ccheck-commute-field-campus select {
+        width: 112px;
+        max-width: 100%;
+      }
+
+      .ccheck-commute-actions {
+        display: grid;
+        grid-template-columns: 1fr 2fr;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
+      .ccheck-commute-results {
+        margin-top: 8px;
+      }
+
+      .ccheck-commute-summary {
+        margin-bottom: 7px;
+        color: #9a3412;
+        font-weight: 700;
+      }
+
+      .ccheck-commute-card {
+        margin-top: 7px;
+        padding: 8px;
+        background: #ffffff;
+        border: 1px solid #fdba74;
+        border-left: 4px solid #f97316;
+        border-radius: 6px;
+      }
+
+      .ccheck-commute-card strong,
+      .ccheck-commute-card small {
+        display: block;
+      }
+
+      .ccheck-commute-card small {
+        margin-top: 2px;
+        color: #475569;
       }
 
       .ccheck-list {
@@ -1357,6 +1421,21 @@
             <div class="ccheck-stat"><strong>0</strong>异常</div>
             <div class="ccheck-stat"><strong>0</strong>未知色</div>
           </div>
+          <div class="ccheck-commute-query">
+            <div class="ccheck-section-title">跑校区查询</div>
+            <div class="ccheck-commute-tools">
+              <label class="ccheck-field ccheck-commute-field-date">日期 <input id="ccheck-commute-date" type="date" value="${formatDateInput(new Date())}"></label>
+              <label class="ccheck-field ccheck-commute-field-campus">出发 <select id="ccheck-commute-from">${renderCommuteCampusOptions()}</select></label>
+              <label class="ccheck-field ccheck-commute-field-campus">到达 <select id="ccheck-commute-to">${renderCommuteCampusOptions()}</select></label>
+            </div>
+            <div class="ccheck-commute-actions">
+              <button class="ccheck-btn" type="button" data-action="commute-swap">交换方向</button>
+              <button class="ccheck-btn ccheck-btn-primary" type="button" data-action="commute-query">查询 A→B</button>
+            </div>
+            <div class="ccheck-commute-results" id="ccheck-commute-results">
+              <div class="ccheck-empty">全表扫描后，可按日期和方向查询老师。</div>
+            </div>
+          </div>
           <div class="ccheck-list" id="ccheck-list">
             <div class="ccheck-empty">还没有扫描结果。</div>
           </div>
@@ -1443,6 +1522,8 @@
       if (action === 'clear') clearMarkers();
       if (action === 'clear-data') clearCurrentData();
       if (action === 'export') exportCsv();
+      if (action === 'commute-swap') swapCommuteCampuses();
+      if (action === 'commute-query') queryCampusCommutes();
       if (action === 'debug-rest') debugRest();
       if (action === 'export-debug') exportDebugData();
       if (action === 'meeting-select-all') selectAllMeetingTeachers();
@@ -4732,6 +4813,146 @@
     refreshMeetingPlanner(events, options);
   }
 
+  function renderCommuteCampusOptions() {
+    return ['<option value="">选择校区</option>']
+      .concat(Array.from(CONFIG.realCampuses).map((campus) => `<option value="${escapeHtml(campus)}">${escapeHtml(campus)}</option>`))
+      .join('');
+  }
+
+  function findCampusCommuteLegs(events, query) {
+    const date = String(query?.date || '');
+    const fromCampus = String(query?.fromCampus || '');
+    const toCampus = String(query?.toCampus || '');
+    if (!date || !fromCampus || !toCampus || fromCampus === toCampus) return [];
+
+    const grouped = new Map();
+    (events || []).forEach((event) => {
+      if (!event || event.date !== date || !event.teacher || !isCampusAuditEvent(event)) return;
+      const key = `${event.teacher}||${event.date}`;
+      if (!grouped.has(key)) grouped.set(key, []);
+      grouped.get(key).push(event);
+    });
+
+    const legs = [];
+    grouped.forEach((teacherEvents) => {
+      const timeline = teacherEvents.slice().sort(compareByTime);
+      const campusGroups = [];
+
+      timeline.forEach((event, timelineIndex) => {
+        const campus = getPhysicalCampusForAudit(event);
+        if (!campus) return;
+        const lastGroup = campusGroups[campusGroups.length - 1];
+        if (lastGroup?.campus === campus) {
+          lastGroup.lastEvent = event;
+          lastGroup.lastIndex = timelineIndex;
+          return;
+        }
+        campusGroups.push({
+          campus,
+          firstEvent: event,
+          lastEvent: event,
+          firstIndex: timelineIndex,
+          lastIndex: timelineIndex
+        });
+      });
+
+      for (let index = 0; index < campusGroups.length - 1; index += 1) {
+        const fromGroup = campusGroups[index];
+        const toGroup = campusGroups[index + 1];
+        if (fromGroup.campus !== fromCampus || toGroup.campus !== toCampus) continue;
+        const intermediateEvents = timeline.slice(fromGroup.lastIndex + 1, toGroup.firstIndex);
+        const intermediateOnlineEvents = intermediateEvents.filter(isOnlineCourseEvent);
+        legs.push({
+          teacher: fromGroup.lastEvent.teacher,
+          date,
+          fromCampus,
+          toCampus,
+          fromEvent: fromGroup.lastEvent,
+          toEvent: toGroup.firstEvent,
+          availableMinutes: toGroup.firstEvent.startMinutes - fromGroup.lastEvent.endMinutes,
+          hasIntermediateOnline: intermediateOnlineEvents.length > 0,
+          intermediateOnlineEvents
+        });
+      }
+    });
+
+    return legs.sort((a, b) => (
+      a.fromEvent.endMinutes - b.fromEvent.endMinutes
+      || a.toEvent.startMinutes - b.toEvent.startMinutes
+      || a.teacher.localeCompare(b.teacher, 'zh-CN')
+    ));
+  }
+
+  function swapCommuteCampuses() {
+    const fromSelect = document.getElementById('ccheck-commute-from');
+    const toSelect = document.getElementById('ccheck-commute-to');
+    if (!fromSelect || !toSelect) return;
+    const fromCampus = fromSelect.value;
+    fromSelect.value = toSelect.value;
+    toSelect.value = fromCampus;
+    if (fromSelect.value && toSelect.value) queryCampusCommutes();
+  }
+
+  function queryCampusCommutes() {
+    const container = document.getElementById('ccheck-commute-results');
+    const date = document.getElementById('ccheck-commute-date')?.value || '';
+    const fromCampus = document.getElementById('ccheck-commute-from')?.value || '';
+    const toCampus = document.getElementById('ccheck-commute-to')?.value || '';
+    if (!container) return;
+
+    if (!state.lastEvents.length) {
+      container.innerHTML = '<div class="ccheck-empty">还没有扫描数据，请先点击“全表扫描”。</div>';
+      setStatus('跑校区查询需要先完成一次全表扫描。');
+      return;
+    }
+    if (!date) {
+      container.innerHTML = '<div class="ccheck-empty">请选择查询日期。</div>';
+      return;
+    }
+    if (!fromCampus || !toCampus) {
+      container.innerHTML = '<div class="ccheck-empty">请选择出发校区和到达校区。</div>';
+      return;
+    }
+    if (fromCampus === toCampus) {
+      container.innerHTML = '<div class="ccheck-empty">出发校区和到达校区不能相同。</div>';
+      return;
+    }
+
+    const loadedDates = new Set(state.lastEvents.map((event) => event?.date).filter(Boolean));
+    if (!loadedDates.has(date)) {
+      container.innerHTML = '<div class="ccheck-empty">所选日期不在当前扫描数据中，请打开包含该日期的课表后重新全表扫描。</div>';
+      setStatus(`${date} 不在当前扫描范围，请切换课表日期后重新全表扫描。`);
+      return;
+    }
+
+    const legs = findCampusCommuteLegs(state.lastEvents, { date, fromCampus, toCampus });
+    if (!legs.length) {
+      container.innerHTML = `<div class="ccheck-empty">${escapeHtml(date)} 没有查到 ${escapeHtml(fromCampus)}→${escapeHtml(toCampus)} 的老师。</div>`;
+      setStatus(`${date}：没有查到 ${fromCampus}→${toCampus}。`);
+      return;
+    }
+
+    const teacherCount = new Set(legs.map((leg) => leg.teacher)).size;
+    container.innerHTML = `
+      <div class="ccheck-commute-summary">${escapeHtml(date)}：${teacherCount} 位老师，${legs.length} 趟 ${escapeHtml(fromCampus)}→${escapeHtml(toCampus)}</div>
+      ${legs.map((leg) => renderCampusCommuteLeg(leg)).join('')}
+    `;
+    setStatus(`${date}：查到 ${teacherCount} 位老师、${legs.length} 趟 ${fromCampus}→${toCampus}。`);
+  }
+
+  function renderCampusCommuteLeg(leg) {
+    const gapText = leg.availableMinutes >= 0
+      ? `间隔 ${leg.availableMinutes} 分钟`
+      : `时间重叠 ${Math.abs(leg.availableMinutes)} 分钟`;
+    const onlineText = leg.hasIntermediateOnline ? '中间含线上课' : '中间无线上课';
+    return `
+      <div class="ccheck-commute-card">
+        <strong>${escapeHtml(leg.teacher)}｜${escapeHtml(leg.fromCampus)} ${escapeHtml(leg.fromEvent.end)} → ${escapeHtml(leg.toCampus)} ${escapeHtml(leg.toEvent.start)}</strong>
+        <small>${escapeHtml(gapText)}｜${escapeHtml(onlineText)}</small>
+      </div>
+    `;
+  }
+
   async function collectEventsWithCourseDetails(scanTop, detailBudgetMs) {
     const events = collectEvents(scanTop);
     await attachCourseDetails(events, detailBudgetMs);
@@ -7100,6 +7321,10 @@
         run: assertSelfTestOnlyOnlineDifferentCampusReminder
       },
       {
+        name: '跑校区查询：严格方向、实体段、线上夹层和日期隔离',
+        run: assertSelfTestCampusCommuteQuery
+      },
+      {
         name: '校区：单侧线上异色紧贴线下要报未改校区',
         run: assertSelfTestSingleSidedOnlineCampusStickyMismatch
       },
@@ -8975,6 +9200,59 @@
     ];
   }
 
+  function assertSelfTestCampusCommuteQuery() {
+    const date = '2026-07-20';
+    const makeLegEvent = (key, teacher, campus, hex, startMinutes, endMinutes, overrides = {}) => makeSelfTestCourseEvent({
+      key,
+      teacher,
+      date,
+      text: key,
+      campus,
+      hex,
+      startMinutes,
+      endMinutes,
+      start: formatMinutes(startMinutes),
+      end: formatMinutes(endMinutes),
+      ...overrides
+    });
+    const events = [
+      makeLegEvent('甲城建第一节', '甲老师', '城建校区', '#FFBF41', 9 * 60, 9 * 60 + 45),
+      makeLegEvent('甲城建第二节', '甲老师', '城建校区', '#FFBF41', 10 * 60, 10 * 60 + 45),
+      makeLegEvent('甲线上课', '甲老师', '虚拟校区', '#7F91F5', 11 * 60, 11 * 60 + 45, { type: 'online', courseForm: '线上' }),
+      makeLegEvent('甲钱江第一节', '甲老师', '钱江校区', '#FB5757', 12 * 60, 12 * 60 + 45),
+      makeLegEvent('甲城建返回', '甲老师', '城建校区', '#FFBF41', 13 * 60, 13 * 60 + 45),
+      makeLegEvent('甲钱江第二趟', '甲老师', '钱江校区', '#FB5757', 14 * 60, 14 * 60 + 45),
+      makeLegEvent('乙钱江先上课', '乙老师', '钱江校区', '#FB5757', 9 * 60, 9 * 60 + 45),
+      makeLegEvent('乙城建后上课', '乙老师', '城建校区', '#FFBF41', 10 * 60, 10 * 60 + 45),
+      makeLegEvent('丙城建第一节', '丙老师', '城建校区', '#FFBF41', 9 * 60, 9 * 60 + 45),
+      makeLegEvent('丙城建第二节', '丙老师', '城建校区', '#FFBF41', 10 * 60, 10 * 60 + 45),
+      makeLegEvent('丁城建', '丁老师', '城建校区', '#FFBF41', 9 * 60, 9 * 60 + 45),
+      makeLegEvent('丁紫金港', '丁老师', '紫金港校区', '#B290FE', 11 * 60, 11 * 60 + 45),
+      makeLegEvent('丁钱江', '丁老师', '钱江校区', '#FB5757', 14 * 60, 14 * 60 + 45),
+      makeLegEvent('戊另一天城建', '戊老师', '城建校区', '#FFBF41', 9 * 60, 9 * 60 + 45, { date: '2026-07-21' }),
+      makeLegEvent('戊另一天钱江', '戊老师', '钱江校区', '#FB5757', 11 * 60, 11 * 60 + 45, { date: '2026-07-21' })
+    ];
+
+    const forward = findCampusCommuteLegs(events, { date, fromCampus: '城建校区', toCampus: '钱江校区' });
+    if (forward.length !== 2 || forward.some((leg) => leg.teacher !== '甲老师')) {
+      throw new Error(`城建到钱江应只识别甲老师两趟，实际：${forward.map((leg) => `${leg.teacher}:${leg.fromEvent.text}->${leg.toEvent.text}`).join('；') || '无'}`);
+    }
+    if (forward[0].fromEvent.text !== '甲城建第二节' || forward[0].toEvent.text !== '甲钱江第一节') {
+      throw new Error('连续同校区课程应取城建最后一项和钱江第一项');
+    }
+    if (!forward[0].hasIntermediateOnline || forward[1].hasIntermediateOnline) {
+      throw new Error('线上夹层标记与实际事件不一致');
+    }
+    if (forward.some((leg) => leg.teacher === '丁老师' || leg.teacher === '戊老师')) {
+      throw new Error('A-C-B 或其他日期不应计入直接 A-B 查询');
+    }
+
+    const reverse = findCampusCommuteLegs(events, { date, fromCampus: '钱江校区', toCampus: '城建校区' });
+    if (reverse.length !== 2 || !reverse.some((leg) => leg.teacher === '乙老师')) {
+      throw new Error('反向查询应独立识别钱江到城建，不得与正向混合');
+    }
+  }
+
   function makeSelfTestVirtualBetweenCampusEvents(nextStartMinutes) {
     return [
       makeSelfTestCourseEvent({
@@ -9202,6 +9480,9 @@
 
     const list = document.getElementById('ccheck-list');
     if (list) list.innerHTML = '<div class="ccheck-empty">当前数据已清空。</div>';
+
+    const commuteResults = document.getElementById('ccheck-commute-results');
+    if (commuteResults) commuteResults.innerHTML = '<div class="ccheck-empty">当前数据已清空，请重新全表扫描。</div>';
 
     const teacherList = document.getElementById('ccheck-meeting-teachers');
     if (teacherList) teacherList.innerHTML = '<div class="ccheck-empty">扫描后显示老师。</div>';
