@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.3.5
+// @version      1.3.6
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.3.5';
+  const SCRIPT_VERSION = '1.3.6';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -493,6 +493,11 @@
 
       .ccheck-commute-results {
         margin-top: 8px;
+      }
+
+      .ccheck-commute-results[hidden],
+      .ccheck-list[hidden] {
+        display: none;
       }
 
       .ccheck-commute-summary {
@@ -1430,9 +1435,9 @@
             </div>
             <div class="ccheck-commute-actions">
               <button class="ccheck-btn" type="button" data-action="commute-swap">交换方向</button>
-              <button class="ccheck-btn ccheck-btn-primary" type="button" data-action="commute-query">查询 A→B</button>
+              <button class="ccheck-btn ccheck-btn-primary" type="button" data-action="commute-query">查询跑校区</button>
             </div>
-            <div class="ccheck-commute-results" id="ccheck-commute-results">
+            <div class="ccheck-commute-results" id="ccheck-commute-results" hidden>
               <div class="ccheck-empty">全表扫描后，可按日期和方向查询老师。</div>
             </div>
           </div>
@@ -4809,6 +4814,7 @@
     const result = analyze(events, settings);
     state.lastEvents = events;
     state.lastResult = result;
+    setAuditResultMode('audit');
     renderResult(result, label);
     refreshMeetingPlanner(events, options);
   }
@@ -4899,6 +4905,7 @@
     const fromCampus = document.getElementById('ccheck-commute-from')?.value || '';
     const toCampus = document.getElementById('ccheck-commute-to')?.value || '';
     if (!container) return;
+    setAuditResultMode('commute');
 
     if (!state.lastEvents.length) {
       container.innerHTML = '<div class="ccheck-empty">还没有扫描数据，请先点击“全表扫描”。</div>';
@@ -4938,6 +4945,14 @@
       ${legs.map((leg) => renderCampusCommuteLeg(leg)).join('')}
     `;
     setStatus(`${date}：查到 ${teacherCount} 位老师、${legs.length} 趟 ${fromCampus}→${toCampus}。`);
+  }
+
+  function setAuditResultMode(mode) {
+    const auditList = document.getElementById('ccheck-list');
+    const commuteResults = document.getElementById('ccheck-commute-results');
+    const showCommute = mode === 'commute';
+    if (auditList) auditList.hidden = showCommute;
+    if (commuteResults) commuteResults.hidden = !showCommute;
   }
 
   function renderCampusCommuteLeg(leg) {
@@ -7397,6 +7412,9 @@
     if (/setNativeInputValue\(input,\s*prefix\)/.test(source)) {
       throw new Error('教室下拉不支持输入筛选，不应向教室输入框写入前缀');
     }
+    if (!/data-action="commute-query">查询跑校区<\/button>/.test(source)) {
+      throw new Error('跑校区按钮文案应为“查询跑校区”');
+    }
   }
 
   function assertSelfTestSingleMeetingDraftPath() {
@@ -9251,6 +9269,31 @@
     if (reverse.length !== 2 || !reverse.some((leg) => leg.teacher === '乙老师')) {
       throw new Error('反向查询应独立识别钱江到城建，不得与正向混合');
     }
+
+    const hadOwnDocument = Object.prototype.hasOwnProperty.call(globalThis, 'document');
+    const previousDocument = globalThis.document;
+    const auditList = { hidden: false };
+    const commuteResults = { hidden: true };
+    globalThis.document = {
+      getElementById(id) {
+        if (id === 'ccheck-list') return auditList;
+        if (id === 'ccheck-commute-results') return commuteResults;
+        return null;
+      }
+    };
+    try {
+      setAuditResultMode('commute');
+      if (!auditList.hidden || commuteResults.hidden) {
+        throw new Error('显示跑校区列表时必须隐藏核对课表列表');
+      }
+      setAuditResultMode('audit');
+      if (auditList.hidden || !commuteResults.hidden) {
+        throw new Error('显示核对课表列表时必须隐藏跑校区列表');
+      }
+    } finally {
+      if (hadOwnDocument) globalThis.document = previousDocument;
+      else delete globalThis.document;
+    }
   }
 
   function makeSelfTestVirtualBetweenCampusEvents(nextStartMinutes) {
@@ -9468,6 +9511,7 @@
     state.lastEvents = [];
     state.meetingPlanner.selectedTeachers.clear();
     clearMarkers();
+    setAuditResultMode('audit');
 
     const summary = document.getElementById('ccheck-summary');
     if (summary) {
