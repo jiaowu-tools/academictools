@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.3.3
+// @version      1.3.4
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.3.3';
+  const SCRIPT_VERSION = '1.3.4';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2498,6 +2498,8 @@
     const compactSource = String(compactText || rawText || '');
     const matched = extractSmartMeetingTeacherSegment(rawSource)
       || extractSmartMeetingTeacherSegment(compactSource)
+      || extractSmartMeetingTeacherSuffixSegment(rawSource)
+      || extractSmartMeetingTeacherSuffixSegment(compactSource)
       || extractSmartMeetingOccupyTeacherSegment(rawSource)
       || extractSmartMeetingOccupyTeacherSegment(compactSource)
       || extractSmartMeetingPossessiveTeacherSegment(rawSource)
@@ -2526,6 +2528,12 @@
       if (names.length) return match[1];
     }
     return '';
+  }
+
+  function extractSmartMeetingTeacherSuffixSegment(text) {
+    const source = String(text || '');
+    const match = source.match(/(?:^|[\n\r,，;；。])\s*([\u4e00-\u9fa5A-Za-z]{2,8})老师(?=\s*(?:的|[,，;；。]|$))/u);
+    return match ? match[1] : '';
   }
 
   function extractSmartMeetingPossessiveTeacherSegment(text) {
@@ -2651,6 +2659,8 @@
   function parseSmartMeetingName(rawText, compactText) {
     const explicitName = parseSmartMeetingExplicitName(rawText) || parseSmartMeetingExplicitName(compactText);
     if (explicitName) return explicitName;
+    const occupyName = parseSmartMeetingOccupyName(rawText) || parseSmartMeetingOccupyName(compactText);
+    if (occupyName) return occupyName;
     const leadingName = parseSmartMeetingLeadingName(rawText);
     if (leadingName) return leadingName;
     const namedAfterTime = parseSmartMeetingNameAfterClock(rawText);
@@ -2660,6 +2670,12 @@
     const afterIntro = trimSmartMeetingNameIntro(text);
     const beforeDetails = cutSmartMeetingNameBeforeDetails(afterIntro);
     return cleanSmartMeetingName(beforeDetails);
+  }
+
+  function parseSmartMeetingOccupyName(text) {
+    const source = String(text || '').trim();
+    const match = source.match(/^\s*(?:辛苦老师)?(?:帮|给)?\s*((?!我)[\u4e00-\u9fa5A-Za-z]{2,8})占空(?:一下)?/u);
+    return match ? `${match[1]}占空` : '';
   }
 
   function parseSmartMeetingLeadingName(text) {
@@ -7777,6 +7793,27 @@
         throw new Error(`${name}占空格式识别失败：${JSON.stringify({ meetingName: namedOccupy.meetingName, date: namedOccupy.date, startTime: namedOccupy.startTime, endTime: namedOccupy.endTime, durationMinutes: namedOccupy.durationMinutes, meetingMode: namedOccupy.meetingMode, meetingCampus: namedOccupy.meetingCampus })}`);
       }
     });
+    const politeNamedOccupy = parseSmartMeetingText('辛苦老师帮包珂珂占空一下7.24上午9:00-10:35，王瑾音老师，紫金线下', {
+      now: new Date(2026, 6, 20)
+    });
+    const politeNamedOccupyExpected = {
+      meetingName: '包珂珂占空',
+      date: '2026-07-24',
+      startTime: '09:00',
+      endTime: '10:35',
+      durationMinutes: 95,
+      meetingMode: 'offline',
+      timePeriod: '上午',
+      meetingCampus: '紫金港',
+      teachers: '王瑾音'
+    };
+    Object.entries(politeNamedOccupyExpected).forEach(([key, value]) => {
+      const actual = key === 'teachers' ? politeNamedOccupy.teachers.join(',') : politeNamedOccupy[key];
+      if (actual !== value) throw new Error(`礼貌占空格式 ${key} 应为 ${value}，实际 ${actual}`);
+    });
+    if (getMeetingDraftClassroomPrefixes(politeNamedOccupy).join(',') !== 'M') {
+      throw new Error(`礼貌占空紫金线下应生成 M 教室候选，实际：${getMeetingDraftClassroomPrefixes(politeNamedOccupy).join(',')}`);
+    }
     const relativeOriLessonMeeting = parseSmartMeetingText('帮我排一下 ori批课 \n明天下午14:00-17:00\n席佳颖 +利锦 \n先城西线下排个教室', {
       now: new Date(2026, 6, 7)
     });
