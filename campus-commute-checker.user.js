@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.3.8
+// @version      1.3.9
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.3.8';
+  const SCRIPT_VERSION = '1.3.9';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -1971,10 +1971,14 @@
     try {
       const interfaceEvents = collectEventsFromDiagramData();
       if (interfaceEvents.some((event) => event.hex)) {
-        setStatus('接口数据已读取，正在补充当前可见课程的线上/线下信息。');
-        const mergedDetails = await enrichInterfaceEventsWithVisibleCourseDetails(interfaceEvents);
-        finishScan(interfaceEvents, `${scanLabel}完成`);
-        setStatus(`v${SCRIPT_VERSION} ${scanLabel}完成：识别 ${interfaceEvents.filter((event) => event.hex).length} 个课程/占用，补充 ${mergedDetails} 个可见课程详情。`);
+        setStatus('接口数据已读取，正在合并页面全表的课程详情。');
+        const pageEvents = await collectEventsWithCourseDetails(
+          getScrollTop(findScrollContainer()),
+          CONFIG.visibleDetailScanBudgetMs
+        );
+        const merged = mergeInterfaceEventsWithPageEvents(interfaceEvents, pageEvents);
+        finishScan(merged.events, `${scanLabel}完成`);
+        setStatus(`v${SCRIPT_VERSION} ${scanLabel}完成：识别 ${merged.events.filter((event) => event.hex).length} 个课程/占用，采用 ${merged.pageMatchedCount} 个页面色块，接口补充 ${merged.interfaceOnlyCount} 个事件。`);
         return true;
       }
 
@@ -5154,55 +5158,33 @@
     return events;
   }
 
-  async function enrichInterfaceEventsWithVisibleCourseDetails(interfaceEvents) {
-    const visibleEvents = collectEvents(getScrollTop(findScrollContainer()));
-    await attachCourseDetails(visibleEvents, CONFIG.visibleDetailScanBudgetMs);
-    mergeVisibleUnavailableEvents(interfaceEvents, visibleEvents);
+  function mergeInterfaceEventsWithPageEvents(interfaceEvents, pageEvents) {
+    const remainingInterfaceIndexes = new Set((interfaceEvents || []).map((_, index) => index));
+    const mergedEvents = [];
+    let pageMatchedCount = 0;
 
-    let mergedCount = 0;
-    visibleEvents
-      .filter(hasCourseDetailInfo)
-      .forEach((detailEvent) => {
-        const target = findMatchingInterfaceEvent(interfaceEvents, detailEvent);
-        if (!target) return;
+    (pageEvents || []).forEach((pageEvent) => {
+      const matchedIndex = findMatchingInterfaceEventIndex(interfaceEvents, pageEvent, remainingInterfaceIndexes);
+      if (matchedIndex < 0) {
+        mergedEvents.push(pageEvent);
+        return;
+      }
 
-        const before = [
-          target.courseForm || '',
-          target.detailCampus || '',
-          target.courseCampus || ''
-        ].join('|');
-        applyCourseDetailToEvent(target, {
-          rawText: detailEvent.detailText || '',
-          courseForm: detailEvent.courseForm || target.courseForm || '',
-          campus: detailEvent.detailCampus || detailEvent.courseCampus || target.detailCampus || target.courseCampus || ''
-        });
-        const after = [
-          target.courseForm || '',
-          target.detailCampus || '',
-          target.courseCampus || ''
-        ].join('|');
-        if (after !== before) mergedCount += 1;
+      remainingInterfaceIndexes.delete(matchedIndex);
+      mergedEvents.push({
+        ...interfaceEvents[matchedIndex],
+        ...pageEvent,
+        source: '页面+接口'
       });
+      pageMatchedCount += 1;
+    });
 
-    return mergedCount;
-  }
-
-  function mergeVisibleUnavailableEvents(interfaceEvents, visibleEvents) {
-    (visibleEvents || [])
-      .filter(shouldMergeVisibleUnavailableEvent)
-      .forEach((visibleEvent) => {
-        if (interfaceEvents.some((event) => isSameUnavailableEvent(event, visibleEvent))) return;
-        interfaceEvents.push(visibleEvent);
-      });
-  }
-
-  function shouldMergeVisibleUnavailableEvent(event) {
-    return Boolean(event
-      && event.type === 'dayOff'
-      && (isSameDayUnavailableText(event.text)
-        || isUnavailableLeaveText(event.text)
-        || isNoCourseDayOffEvent(event)
-        || isRestDayEvent(event)));
+    remainingInterfaceIndexes.forEach((index) => mergedEvents.push(interfaceEvents[index]));
+    return {
+      events: dedupeEvents(mergedEvents),
+      pageMatchedCount,
+      interfaceOnlyCount: remainingInterfaceIndexes.size
+    };
   }
 
   function isSameUnavailableEvent(target, source) {
@@ -5219,17 +5201,23 @@
     return Boolean(event && (event.courseForm || event.detailCampus || event.courseCampus));
   }
 
-  function findMatchingInterfaceEvent(interfaceEvents, detailEvent) {
-    let bestEvent = null;
+  function findMatchingInterfaceEventIndex(interfaceEvents, pageEvent, allowedIndexes) {
+    let bestIndex = -1;
     let bestScore = 0;
-    (interfaceEvents || []).forEach((event) => {
-      const score = scoreCourseDetailMatch(event, detailEvent);
+    (interfaceEvents || []).forEach((event, index) => {
+      if (allowedIndexes && !allowedIndexes.has(index)) return;
+      if (isSameUnavailableEvent(event, pageEvent)) {
+        bestIndex = index;
+        bestScore = Number.POSITIVE_INFINITY;
+        return;
+      }
+      const score = scoreCourseDetailMatch(event, pageEvent);
       if (score > bestScore) {
-        bestEvent = event;
+        bestIndex = index;
         bestScore = score;
       }
     });
-    return bestScore >= 10 ? bestEvent : null;
+    return bestScore >= 10 ? bestIndex : -1;
   }
 
   function scoreCourseDetailMatch(target, source) {
@@ -7516,6 +7504,10 @@
         run: assertSelfTestOnlyOnlineDifferentCampusReminder
       },
       {
+        name: '异常扫描：页面全表覆盖接口差异且不重复',
+        run: assertSelfTestAuditScanMergesFullPageEvents
+      },
+      {
         name: '跑校区查询：严格方向、实体段、线上夹层和日期隔离',
         run: assertSelfTestCampusCommuteQuery
       },
@@ -8874,6 +8866,101 @@
     const anomalies = createTwoColorSandwichAnomalies(events, { adjacentGapMinutes: 15 });
     if (anomalies.some((item) => item.kind === '未改校区')) {
       throw new Error('线上课挂靠钱江且前后均为钱江时，不应提示未改校区');
+    }
+  }
+
+  function assertSelfTestAuditScanMergesFullPageEvents() {
+    const interfaceEvents = [];
+    const pageEvents = [];
+    ['张泽凡', '沈莺', '童娜', '张子月'].forEach((teacher, index) => {
+      const base = {
+        teacher,
+        date: '2026-07-22',
+        parentIndex: 3,
+        rowIndex: index
+      };
+      interfaceEvents.push(
+        makeSelfTestCourseEvent({
+          ...base,
+          key: `interface-${teacher}-offline`,
+          text: `${teacher}紫金港线下`,
+          campus: '紫金港校区',
+          hex: '#B290FE',
+          startMinutes: 9 * 60,
+          endMinutes: 9 * 60 + 45,
+          start: '09:00',
+          end: '09:45'
+        }),
+        makeSelfTestCourseEvent({
+          ...base,
+          key: `interface-${teacher}-online`,
+          text: `${teacher}线上课`,
+          type: 'online',
+          campus: '会议/教研/线上占用',
+          hex: '#FFAFDE',
+          startMinutes: 19 * 60 + 4,
+          endMinutes: 19 * 60 + 49,
+          start: '19:04',
+          end: '19:49'
+        })
+      );
+      pageEvents.push(
+        makeSelfTestCourseEvent({
+          ...base,
+          key: `page-${teacher}-offline`,
+          text: `${teacher}紫金港线下`,
+          campus: '紫金港校区',
+          hex: '#B290FE',
+          startMinutes: 9 * 60,
+          endMinutes: 9 * 60 + 45,
+          start: '09:00',
+          end: '09:45'
+        }),
+        makeSelfTestCourseEvent({
+          ...base,
+          key: `page-${teacher}-online`,
+          text: `${teacher}线上课`,
+          type: 'online',
+          campus: '线上',
+          hex: '#FFAFDE',
+          courseForm: '线上',
+          courseCampus: '城建校区',
+          detailCampus: '城建校区',
+          startMinutes: 19 * 60,
+          endMinutes: 19 * 60 + 45,
+          start: '19:00',
+          end: '19:45'
+        })
+      );
+    });
+    interfaceEvents.push(makeSelfTestCourseEvent({
+      key: 'interface-only-event',
+      teacher: '接口补充老师',
+      date: '2026-07-22',
+      text: '仅接口存在的课程',
+      campus: '钱江校区',
+      hex: '#FB5757',
+      startMinutes: 14 * 60,
+      endMinutes: 14 * 60 + 45,
+      start: '14:00',
+      end: '14:45'
+    }));
+
+    const merged = mergeInterfaceEventsWithPageEvents(interfaceEvents, pageEvents);
+    if (merged.pageMatchedCount !== pageEvents.length || merged.interfaceOnlyCount !== 1) {
+      throw new Error(`异常扫描合并计数不正确：页面匹配 ${merged.pageMatchedCount}，接口补充 ${merged.interfaceOnlyCount}`);
+    }
+    if (merged.events.length !== pageEvents.length + 1) {
+      throw new Error(`接口与页面同一色块不应重复，实际合并后 ${merged.events.length} 个事件`);
+    }
+    const pageOnline = merged.events.filter((event) => event.courseForm === '线上');
+    if (pageOnline.length !== 4 || pageOnline.some((event) => event.start !== '19:00' || event.source !== '页面+接口')) {
+      throw new Error('异常扫描应采用页面色块的线上详情和准确时间');
+    }
+    const result = analyze(merged.events, makeSelfTestSettings());
+    const reminders = result.anomalies.filter((item) => item.kind === '检测：有线上课');
+    if (reminders.length !== 4) {
+      throw new Error(`离屏线上课应完整识别 4 条提醒，实际 ${reminders.length} 条`);
     }
   }
 
