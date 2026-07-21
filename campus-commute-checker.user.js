@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.3.6
+// @version      1.3.7
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.3.6';
+  const SCRIPT_VERSION = '1.3.7';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -472,11 +472,36 @@
 
       .ccheck-commute-field-date {
         grid-column: 1 / -1;
+        align-items: flex-start;
       }
 
-      .ccheck-commute-field-date input {
-        width: 150px;
-        max-width: 100%;
+      .ccheck-commute-date-options {
+        display: flex;
+        flex: 1 1 auto;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 6px;
+        max-height: 86px;
+        overflow: auto;
+      }
+
+      .ccheck-commute-date-option {
+        min-width: 52px;
+        height: 28px;
+        padding: 0 9px;
+        border: 1px solid #fdba74;
+        border-radius: 999px;
+        background: #ffffff;
+        color: #9a3412;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .ccheck-commute-date-option.is-selected {
+        border-color: #f97316;
+        background: #f97316;
+        color: #ffffff;
+        font-weight: 700;
       }
 
       .ccheck-commute-field-campus select {
@@ -523,6 +548,17 @@
       .ccheck-commute-card small {
         margin-top: 2px;
         color: #475569;
+      }
+
+      .ccheck-commute-locate {
+        margin-top: 7px;
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid #f97316;
+        border-radius: 5px;
+        background: #ffffff;
+        color: #c2410c;
+        cursor: pointer;
       }
 
       .ccheck-list {
@@ -1429,7 +1465,10 @@
           <div class="ccheck-commute-query">
             <div class="ccheck-section-title">跑校区查询</div>
             <div class="ccheck-commute-tools">
-              <label class="ccheck-field ccheck-commute-field-date">日期 <input id="ccheck-commute-date" type="date" value="${formatDateInput(new Date())}"></label>
+              <div class="ccheck-field ccheck-commute-field-date">
+                <span>日期</span>
+                <div class="ccheck-commute-date-options" id="ccheck-commute-dates"></div>
+              </div>
               <label class="ccheck-field ccheck-commute-field-campus">出发 <select id="ccheck-commute-from">${renderCommuteCampusOptions()}</select></label>
               <label class="ccheck-field ccheck-commute-field-campus">到达 <select id="ccheck-commute-to">${renderCommuteCampusOptions()}</select></label>
             </div>
@@ -1529,6 +1568,7 @@
       if (action === 'export') exportCsv();
       if (action === 'commute-swap') swapCommuteCampuses();
       if (action === 'commute-query') queryCampusCommutes();
+      if (action === 'commute-date-pick') selectCommuteDate(button.dataset.date);
       if (action === 'debug-rest') debugRest();
       if (action === 'export-debug') exportDebugData();
       if (action === 'meeting-select-all') selectAllMeetingTeachers();
@@ -1597,6 +1637,8 @@
 
     updateMeetingDateRangeTrigger();
     updateMeetingRangeLabel();
+    refreshCommuteDateOptions();
+    installCommuteDateRangeSync();
     const restoredSupervisorWorkbook = restoreSupervisorWorkbookFromStorage();
     renderSupervisorPlanner();
     if (restoredSupervisorWorkbook && state.supervisorPlanner.warnings.length) {
@@ -4814,6 +4856,7 @@
     const result = analyze(events, settings);
     state.lastEvents = events;
     state.lastResult = result;
+    refreshCommuteDateOptions(events);
     setAuditResultMode('audit');
     renderResult(result, label);
     refreshMeetingPlanner(events, options);
@@ -4823,6 +4866,67 @@
     return ['<option value="">选择校区</option>']
       .concat(Array.from(CONFIG.realCampuses).map((campus) => `<option value="${escapeHtml(campus)}">${escapeHtml(campus)}</option>`))
       .join('');
+  }
+
+  function installCommuteDateRangeSync() {
+    if (window.__ccheckCommuteDateRangeSyncInstalled) return;
+    window.__ccheckCommuteDateRangeSyncInstalled = true;
+    const refresh = (event) => {
+      const placeholder = event?.target?.placeholder || '';
+      if (placeholder !== '开始日期' && placeholder !== '结束日期') return;
+      window.setTimeout(() => refreshCommuteDateOptions(), 0);
+      window.setTimeout(() => refreshCommuteDateOptions(), 240);
+    };
+    document.addEventListener('input', refresh, true);
+    document.addEventListener('change', refresh, true);
+  }
+
+  function getTeacherScheduleDateRange() {
+    const startDate = String(findScheduleDateInput('开始日期')?.value || '').trim();
+    const endDate = String(findScheduleDateInput('结束日期')?.value || '').trim();
+    return isIsoDate(startDate) && isIsoDate(endDate) && startDate <= endDate
+      ? { startDate, endDate }
+      : null;
+  }
+
+  function resolveCommuteDateOptions(events, dateRange, headerDates = []) {
+    if (dateRange?.startDate && dateRange?.endDate) {
+      const rangeDates = buildDateRange(dateRange.startDate, dateRange.endDate);
+      if (rangeDates.length) return rangeDates;
+    }
+
+    const eventDates = Array.from(new Set((events || [])
+      .map((event) => event?.date)
+      .filter(isIsoDate)))
+      .sort();
+    if (eventDates.length) return eventDates;
+
+    return Array.from(new Set((headerDates || []).filter(isIsoDate))).sort();
+  }
+
+  function refreshCommuteDateOptions(events = state.lastEvents) {
+    const container = document.getElementById('ccheck-commute-dates');
+    if (!container) return [];
+    const headerDates = getHeaderColumns().map((column) => column.date).filter(Boolean);
+    const dates = resolveCommuteDateOptions(events, getTeacherScheduleDateRange(), headerDates);
+    const previousDate = container.dataset.selectedDate || '';
+    const selectedDate = dates.includes(previousDate) ? previousDate : dates[0] || '';
+    container.dataset.selectedDate = selectedDate;
+    container.innerHTML = dates.length
+      ? dates.map((date) => `
+          <button class="ccheck-commute-date-option${date === selectedDate ? ' is-selected' : ''}" type="button" data-action="commute-date-pick" data-date="${escapeHtml(date)}" title="${escapeHtml(date)}">${escapeHtml(formatShortDate(date))}</button>
+        `).join('')
+      : '<span class="ccheck-muted">先在教师课表选择日期</span>';
+    return dates;
+  }
+
+  function selectCommuteDate(date) {
+    const container = document.getElementById('ccheck-commute-dates');
+    if (!container || !isIsoDate(date)) return;
+    const buttons = Array.from(container.querySelectorAll('[data-action="commute-date-pick"]'));
+    if (!buttons.some((button) => button.dataset.date === date)) return;
+    container.dataset.selectedDate = date;
+    buttons.forEach((button) => button.classList.toggle('is-selected', button.dataset.date === date));
   }
 
   function findCampusCommuteLegs(events, query) {
@@ -4901,7 +5005,7 @@
 
   function queryCampusCommutes() {
     const container = document.getElementById('ccheck-commute-results');
-    const date = document.getElementById('ccheck-commute-date')?.value || '';
+    const date = document.getElementById('ccheck-commute-dates')?.dataset.selectedDate || '';
     const fromCampus = document.getElementById('ccheck-commute-from')?.value || '';
     const toCampus = document.getElementById('ccheck-commute-to')?.value || '';
     if (!container) return;
@@ -4942,8 +5046,9 @@
     const teacherCount = new Set(legs.map((leg) => leg.teacher)).size;
     container.innerHTML = `
       <div class="ccheck-commute-summary">${escapeHtml(date)}：${teacherCount} 位老师，${legs.length} 趟 ${escapeHtml(fromCampus)}→${escapeHtml(toCampus)}</div>
-      ${legs.map((leg) => renderCampusCommuteLeg(leg)).join('')}
+      ${legs.map((leg, index) => renderCampusCommuteLeg(leg, index)).join('')}
     `;
+    bindCampusCommuteLocateButtons(legs);
     setStatus(`${date}：查到 ${teacherCount} 位老师、${legs.length} 趟 ${fromCampus}→${toCampus}。`);
   }
 
@@ -4955,7 +5060,7 @@
     if (commuteResults) commuteResults.hidden = !showCommute;
   }
 
-  function renderCampusCommuteLeg(leg) {
+  function renderCampusCommuteLeg(leg, index) {
     const gapText = leg.availableMinutes >= 0
       ? `间隔 ${leg.availableMinutes} 分钟`
       : `时间重叠 ${Math.abs(leg.availableMinutes)} 分钟`;
@@ -4964,8 +5069,37 @@
       <div class="ccheck-commute-card">
         <strong>${escapeHtml(leg.teacher)}｜${escapeHtml(leg.fromCampus)} ${escapeHtml(leg.fromEvent.end)} → ${escapeHtml(leg.toCampus)} ${escapeHtml(leg.toEvent.start)}</strong>
         <small>${escapeHtml(gapText)}｜${escapeHtml(onlineText)}</small>
+        <button class="ccheck-commute-locate" type="button" data-commute-locate="${index}">定位老师</button>
       </div>
     `;
+  }
+
+  function bindCampusCommuteLocateButtons(legs) {
+    const container = document.getElementById('ccheck-commute-results');
+    if (!container) return;
+    container.querySelectorAll('[data-commute-locate]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const leg = legs[Number(button.dataset.commuteLocate)];
+        if (leg) await locateCampusCommuteLeg(leg);
+      });
+    });
+  }
+
+  function createCampusCommuteLocateAnomaly(leg) {
+    return {
+      teacher: leg?.teacher || '',
+      date: leg?.date || '',
+      previous: leg?.fromEvent || null,
+      current: leg?.toEvent || null,
+      blockingEvents: leg?.intermediateOnlineEvents || [],
+      relatedEvents: []
+    };
+  }
+
+  async function locateCampusCommuteLeg(leg) {
+    if (!leg?.teacher || !leg?.date || !leg?.fromEvent || !leg?.toEvent) return;
+    const anomaly = createCampusCommuteLocateAnomaly(leg);
+    await locateAnomaly(anomaly, [anomaly], { teacher: leg.teacher, date: leg.date }, leg.fromEvent);
   }
 
   async function collectEventsWithCourseDetails(scanTop, detailBudgetMs) {
@@ -9270,6 +9404,17 @@
       throw new Error('反向查询应独立识别钱江到城建，不得与正向混合');
     }
 
+    const rangeDates = resolveCommuteDateOptions([], { startDate: '2026-07-22', endDate: '2026-07-23' });
+    if (rangeDates.join('|') !== '2026-07-22|2026-07-23') {
+      throw new Error(`教师课表日期范围应拆成两个日期选项，实际：${rangeDates.join('|')}`);
+    }
+    const locateAnomaly = createCampusCommuteLocateAnomaly(forward[0]);
+    if (locateAnomaly.previous !== forward[0].fromEvent
+      || locateAnomaly.current !== forward[0].toEvent
+      || locateAnomaly.blockingEvents.length !== forward[0].intermediateOnlineEvents.length) {
+      throw new Error('跑校区定位数据应保留前后色块和中间线上课');
+    }
+
     const hadOwnDocument = Object.prototype.hasOwnProperty.call(globalThis, 'document');
     const previousDocument = globalThis.document;
     const auditList = { hidden: false };
@@ -12849,9 +12994,9 @@
     await locateAnomaly(first, group.anomalies, group);
   }
 
-  async function locateAnomaly(anomaly, anomaliesToMark, group) {
+  async function locateAnomaly(anomaly, anomaliesToMark, group, targetOverride = null) {
     const scroller = findScrollContainer();
-    const target = anomaly.current || anomaly.relatedEvents?.[0] || anomaly.previous;
+    const target = targetOverride || anomaly.current || anomaly.relatedEvents?.[0] || anomaly.previous;
     const locatedRow = await locateTeacherRow(scroller, group || anomaly, target);
     clearMarkers();
     if (locatedRow) {
