@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.3.7
+// @version      1.3.8
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.3.7';
+  const SCRIPT_VERSION = '1.3.8';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -104,6 +104,7 @@
     networkLogs: [],
     latestDiagramData: null,
     courseDetailCache: new Map(),
+    lastScanDateRange: null,
     activeView: 'audit',
     meetingPlanner: {
       selectedTeachers: new Set()
@@ -144,7 +145,7 @@
     if (!isTeacherSchedulePage()) return;
     injectStyles();
     injectPanel();
-    setStatus(`v${SCRIPT_VERSION} 准备就绪。打开课表后点击“全表扫描”。`);
+    setStatus(`v${SCRIPT_VERSION} 准备就绪。选择课表日期后可点击“异常扫描”或直接查询跑校区。`);
   }
 
   function syncFloatingToolsForRoute() {
@@ -1448,7 +1449,7 @@
         <div class="ccheck-status" id="ccheck-status"></div>
         <div class="ccheck-view" id="ccheck-view-audit">
           <div class="ccheck-actions">
-            <button class="ccheck-btn ccheck-btn-primary" type="button" data-action="scan-all">全表扫描</button>
+            <button class="ccheck-btn ccheck-btn-primary" type="button" data-action="scan-all">异常扫描</button>
             <button class="ccheck-btn" type="button" data-action="scan-visible">扫当前可见</button>
             <button class="ccheck-btn" type="button" data-action="clear">清除标记</button>
             <button class="ccheck-btn" type="button" data-action="export">导出CSV</button>
@@ -1477,7 +1478,7 @@
               <button class="ccheck-btn ccheck-btn-primary" type="button" data-action="commute-query">查询跑校区</button>
             </div>
             <div class="ccheck-commute-results" id="ccheck-commute-results" hidden>
-              <div class="ccheck-empty">全表扫描后，可按日期和方向查询老师。</div>
+              <div class="ccheck-empty">选择教师课表日期后，可直接查询跑校区。</div>
             </div>
           </div>
           <div class="ccheck-list" id="ccheck-list">
@@ -1561,7 +1562,10 @@
       const button = event.target.closest('button[data-action]');
       if (!button) return;
       const action = button.dataset.action;
-      if (action === 'scan-all') scanAll();
+      if (action === 'scan-all') {
+        const scanMode = button.closest('#ccheck-view-audit') ? 'audit' : 'full';
+        scanAll({ mode: scanMode });
+      }
       if (action === 'scan-visible') scanVisible();
       if (action === 'clear') clearMarkers();
       if (action === 'clear-data') clearCurrentData();
@@ -1955,24 +1959,26 @@
     };
   }
 
-  async function scanAll() {
+  async function scanAll(options = {}) {
     if (state.isScanning) return;
+    const scanMode = options.mode === 'audit' || options.mode === 'commute' ? options.mode : 'full';
+    const scanLabel = scanMode === 'audit' ? '异常扫描' : (scanMode === 'commute' ? '跑校区扫描' : '全表扫描');
     state.isScanning = true;
     setButtonsDisabled(true);
     clearMarkers();
-    setStatus('全表扫描中，优先尝试接口数据。');
+    setStatus(`${scanLabel}中，优先尝试接口数据。`);
 
     try {
       const interfaceEvents = collectEventsFromDiagramData();
       if (interfaceEvents.some((event) => event.hex)) {
         setStatus('接口数据已读取，正在补充当前可见课程的线上/线下信息。');
         const mergedDetails = await enrichInterfaceEventsWithVisibleCourseDetails(interfaceEvents);
-        finishScan(interfaceEvents, '接口扫描完成');
-        setStatus(`v${SCRIPT_VERSION} 接口扫描完成：识别 ${interfaceEvents.filter((event) => event.hex).length} 个课程/占用，补充 ${mergedDetails} 个可见课程详情。`);
-        return;
+        finishScan(interfaceEvents, `${scanLabel}完成`);
+        setStatus(`v${SCRIPT_VERSION} ${scanLabel}完成：识别 ${interfaceEvents.filter((event) => event.hex).length} 个课程/占用，补充 ${mergedDetails} 个可见课程详情。`);
+        return true;
       }
 
-      setStatus('接口数据不足，改用页面扫描；会临时滚动课表，结束后会回到原位置。');
+      setStatus(`${scanLabel}接口数据不足，改用页面扫描；会临时滚动课表，结束后会回到原位置。`);
       const scroller = findScrollContainer();
       const oldTop = getScrollTop(scroller);
       const maxTop = getMaxScrollTop(scroller);
@@ -1986,15 +1992,17 @@
         const chunk = await collectEventsWithCourseDetails(positions[index], CONFIG.detailScanBudgetMs);
         chunk.forEach((event) => eventMap.set(event.key, event));
         if (index % 10 === 0 || index === positions.length - 1) {
-          setStatus(`全表扫描中：${index + 1}/${positions.length}，已识别 ${eventMap.size} 个色块。`);
+          setStatus(`${scanLabel}中：${index + 1}/${positions.length}，已识别 ${eventMap.size} 个色块。`);
         }
       }
 
       setScrollTop(scroller, oldTop);
       await sleep(CONFIG.scanPauseMs);
-      finishScan(Array.from(eventMap.values()), '全表扫描完成');
+      finishScan(Array.from(eventMap.values()), `${scanLabel}完成`);
+      return true;
     } catch (error) {
       setStatus(`扫描失败：${error.message || error}`);
+      return false;
     } finally {
       state.isScanning = false;
       setButtonsDisabled(false);
@@ -4856,6 +4864,7 @@
     const result = analyze(events, settings);
     state.lastEvents = events;
     state.lastResult = result;
+    state.lastScanDateRange = getTeacherScheduleDateRange();
     refreshCommuteDateOptions(events);
     setAuditResultMode('audit');
     renderResult(result, label);
@@ -4887,6 +4896,11 @@
     return isIsoDate(startDate) && isIsoDate(endDate) && startDate <= endDate
       ? { startDate, endDate }
       : null;
+  }
+
+  function isSameTeacherScheduleDateRange(left, right) {
+    if (!left || !right) return false;
+    return left.startDate === right.startDate && left.endDate === right.endDate;
   }
 
   function resolveCommuteDateOptions(events, dateRange, headerDates = []) {
@@ -5003,23 +5017,13 @@
     if (fromSelect.value && toSelect.value) queryCampusCommutes();
   }
 
-  function queryCampusCommutes() {
+  async function queryCampusCommutes() {
     const container = document.getElementById('ccheck-commute-results');
-    const date = document.getElementById('ccheck-commute-dates')?.dataset.selectedDate || '';
     const fromCampus = document.getElementById('ccheck-commute-from')?.value || '';
     const toCampus = document.getElementById('ccheck-commute-to')?.value || '';
     if (!container) return;
     setAuditResultMode('commute');
 
-    if (!state.lastEvents.length) {
-      container.innerHTML = '<div class="ccheck-empty">还没有扫描数据，请先点击“全表扫描”。</div>';
-      setStatus('跑校区查询需要先完成一次全表扫描。');
-      return;
-    }
-    if (!date) {
-      container.innerHTML = '<div class="ccheck-empty">请选择查询日期。</div>';
-      return;
-    }
     if (!fromCampus || !toCampus) {
       container.innerHTML = '<div class="ccheck-empty">请选择出发校区和到达校区。</div>';
       return;
@@ -5029,10 +5033,41 @@
       return;
     }
 
+    const selectedRange = getTeacherScheduleDateRange();
+    refreshCommuteDateOptions();
+    let date = document.getElementById('ccheck-commute-dates')?.dataset.selectedDate || '';
+    if (!date) {
+      container.innerHTML = '<div class="ccheck-empty">请先在教师课表顶部选择开始日期和结束日期。</div>';
+      setStatus('查询跑校区需要先选择教师课表日期范围。');
+      return;
+    }
+
+    const needsAutoScan = !state.lastEvents.length
+      || (selectedRange && !isSameTeacherScheduleDateRange(selectedRange, state.lastScanDateRange));
+    if (needsAutoScan) {
+      container.innerHTML = '<div class="ccheck-empty">正在按教师课表当前日期自动扫描，请稍候。</div>';
+      setStatus('正在读取教师课表当前日期并刷新课表数据。');
+      if (selectedRange) {
+        const refreshed = await refreshTeacherScheduleForCommuteQuery();
+        if (!refreshed) {
+          container.innerHTML = '<div class="ccheck-empty">没有找到教师课表“搜索”按钮，请先确认当前页面是教师课表。</div>';
+          return;
+        }
+      }
+      const scanned = await scanAll({ mode: 'commute' });
+      setAuditResultMode('commute');
+      if (!scanned) {
+        container.innerHTML = '<div class="ccheck-empty">自动扫描没有完成，请确认教师课表已经搜索出结果后重试。</div>';
+        return;
+      }
+      refreshCommuteDateOptions(state.lastEvents);
+      date = document.getElementById('ccheck-commute-dates')?.dataset.selectedDate || '';
+    }
+
     const loadedDates = new Set(state.lastEvents.map((event) => event?.date).filter(Boolean));
     if (!loadedDates.has(date)) {
-      container.innerHTML = '<div class="ccheck-empty">所选日期不在当前扫描数据中，请打开包含该日期的课表后重新全表扫描。</div>';
-      setStatus(`${date} 不在当前扫描范围，请切换课表日期后重新全表扫描。`);
+      container.innerHTML = '<div class="ccheck-empty">所选日期没有扫描到课表数据，请确认教师课表搜索结果后重试。</div>';
+      setStatus(`${date} 没有扫描到课表数据，请确认页面当前日期范围和搜索结果。`);
       return;
     }
 
@@ -5050,6 +5085,17 @@
     `;
     bindCampusCommuteLocateButtons(legs);
     setStatus(`${date}：查到 ${teacherCount} 位老师、${legs.length} 趟 ${fromCampus}→${toCampus}。`);
+  }
+
+  async function refreshTeacherScheduleForCommuteQuery() {
+    const button = findScheduleSearchButton();
+    if (!button) return false;
+    const previousReceivedAt = state.latestDiagramData?.receivedAt || '';
+    clickElementLikeUser(button);
+    setStatus('已按当前日期点击教师课表“搜索”，正在等待色块图刷新。');
+    await waitForScheduleDiagramData(previousReceivedAt, 8000);
+    await sleep(450);
+    return true;
   }
 
   function setAuditResultMode(mode) {
@@ -7549,6 +7595,15 @@
     if (!/data-action="commute-query">查询跑校区<\/button>/.test(source)) {
       throw new Error('跑校区按钮文案应为“查询跑校区”');
     }
+    if (!/data-action="scan-all">异常扫描<\/button>/.test(source)) {
+      throw new Error('核对课表主扫描按钮应显示为“异常扫描”');
+    }
+    if (!/const scanned = await scanAll\(\{ mode: 'commute' \}\);/.test(source)) {
+      throw new Error('查询跑校区应能自动触发跑校区扫描');
+    }
+    if (!/const refreshed = await refreshTeacherScheduleForCommuteQuery\(\);/.test(source)) {
+      throw new Error('查询跑校区自动扫描前应按当前日期刷新教师课表');
+    }
   }
 
   function assertSelfTestSingleMeetingDraftPath() {
@@ -9408,6 +9463,15 @@
     if (rangeDates.join('|') !== '2026-07-22|2026-07-23') {
       throw new Error(`教师课表日期范围应拆成两个日期选项，实际：${rangeDates.join('|')}`);
     }
+    if (!isSameTeacherScheduleDateRange(
+      { startDate: '2026-07-22', endDate: '2026-07-23' },
+      { startDate: '2026-07-22', endDate: '2026-07-23' }
+    ) || isSameTeacherScheduleDateRange(
+      { startDate: '2026-07-22', endDate: '2026-07-23' },
+      { startDate: '2026-07-23', endDate: '2026-07-24' }
+    )) {
+      throw new Error('跑校区自动扫描必须正确判断教师课表日期范围是否已变化');
+    }
     const locateAnomaly = createCampusCommuteLocateAnomaly(forward[0]);
     if (locateAnomaly.previous !== forward[0].fromEvent
       || locateAnomaly.current !== forward[0].toEvent
@@ -9654,6 +9718,7 @@
   function clearCurrentData() {
     state.lastResult = null;
     state.lastEvents = [];
+    state.lastScanDateRange = null;
     state.meetingPlanner.selectedTeachers.clear();
     clearMarkers();
     setAuditResultMode('audit');
@@ -9671,7 +9736,7 @@
     if (list) list.innerHTML = '<div class="ccheck-empty">当前数据已清空。</div>';
 
     const commuteResults = document.getElementById('ccheck-commute-results');
-    if (commuteResults) commuteResults.innerHTML = '<div class="ccheck-empty">当前数据已清空，请重新全表扫描。</div>';
+    if (commuteResults) commuteResults.innerHTML = '<div class="ccheck-empty">当前数据已清空，选择教师课表日期后可直接查询跑校区。</div>';
 
     const teacherList = document.getElementById('ccheck-meeting-teachers');
     if (teacherList) teacherList.innerHTML = '<div class="ccheck-empty">扫描后显示老师。</div>';
