@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.3.10
+// @version      1.4.0
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.3.10';
+  const SCRIPT_VERSION = '1.4.0';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -5171,9 +5171,13 @@
       }
 
       remainingInterfaceIndexes.delete(matchedIndex);
+      const interfaceEvent = interfaceEvents[matchedIndex];
       mergedEvents.push({
-        ...interfaceEvents[matchedIndex],
+        ...interfaceEvent,
         ...pageEvent,
+        isMeeting: isCourseFormEvent(pageEvent)
+          ? false
+          : Boolean(pageEvent.isMeeting || interfaceEvent.isMeeting),
         source: '页面+接口'
       });
       pageMatchedCount += 1;
@@ -8929,6 +8933,7 @@
           type: 'online',
           campus: '会议/教研/线上占用',
           hex: '#FFAFDE',
+          isMeeting: true,
           startMinutes: 19 * 60 + 4,
           endMinutes: 19 * 60 + 49,
           start: '19:04',
@@ -8985,8 +8990,8 @@
       throw new Error(`接口与页面同一色块不应重复，实际合并后 ${merged.events.length} 个事件`);
     }
     const pageOnline = merged.events.filter((event) => event.courseForm === '线上');
-    if (pageOnline.length !== 4 || pageOnline.some((event) => event.start !== '19:00' || event.source !== '页面+接口')) {
-      throw new Error('异常扫描应采用页面色块的线上详情和准确时间');
+    if (pageOnline.length !== 4 || pageOnline.some((event) => event.start !== '19:00' || event.source !== '页面+接口' || event.isMeeting)) {
+      throw new Error('异常扫描应采用页面色块的线上详情和准确时间，并清除接口遗留的会议标记');
     }
     const result = analyze(merged.events, makeSelfTestSettings());
     const reminders = result.anomalies.filter((item) => item.kind === '检测：有线上课');
