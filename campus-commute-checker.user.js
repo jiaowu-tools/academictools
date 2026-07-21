@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.3.9
+// @version      1.3.10
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.3.9';
+  const SCRIPT_VERSION = '1.3.10';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -5626,22 +5626,34 @@
   async function attachCourseDetails(events, detailBudgetMs) {
     const courseEvents = events.filter((event) => event.hex && event.type !== 'dayOff');
     const startedAt = Date.now();
-    let detailMisses = 0;
-    for (const event of courseEvents) {
-      if (Number.isFinite(detailBudgetMs) && Date.now() - startedAt > detailBudgetMs) return;
-      if (detailMisses >= CONFIG.maxDetailMissesPerScan) return;
+    const hoverCandidates = collectImmediateCourseDetailCandidates(courseEvents, (event) => {
       const cached = state.courseDetailCache.get(event.key);
-      if (cached) {
-        applyCourseDetailToEvent(event, cached);
-        continue;
-      }
+      if (cached) return { detail: cached };
 
       try {
         const item = findVisibleElementForEvent(event);
-        if (!item) continue;
+        if (!item) return null;
+        return {
+          item,
+          detail: readCourseDetailFromEmbeddedPopover(item, event)
+        };
+      } catch (error) {
+        console.warn('[campus-commute-checker] 内嵌课程详情读取失败，已跳过该色块', error);
+        return null;
+      }
+    }).sort((a, b) => {
+      return Number(Boolean(CONFIG.onlineByColor[normalizeHex(b.event.hex)]))
+        - Number(Boolean(CONFIG.onlineByColor[normalizeHex(a.event.hex)]));
+    });
 
-        const detail = readCourseDetailFromEmbeddedPopover(item, event)
-          || await readCourseDetailFromHover(item, event);
+    let detailMisses = 0;
+    for (const candidate of hoverCandidates) {
+      if (Number.isFinite(detailBudgetMs) && Date.now() - startedAt > detailBudgetMs) return;
+      if (detailMisses >= CONFIG.maxDetailMissesPerScan) return;
+      const { event, item } = candidate;
+
+      try {
+        const detail = await readCourseDetailFromHover(item, event);
         if (!detail) {
           detailMisses += 1;
           continue;
@@ -5654,6 +5666,21 @@
         console.warn('[campus-commute-checker] 课程详情读取失败，已跳过该色块', error);
       }
     }
+  }
+
+  function collectImmediateCourseDetailCandidates(courseEvents, resolveCandidate) {
+    const hoverCandidates = [];
+    (courseEvents || []).forEach((event) => {
+      const candidate = resolveCandidate(event);
+      if (!candidate) return;
+      if (candidate.detail) {
+        state.courseDetailCache.set(event.key, candidate.detail);
+        applyCourseDetailToEvent(event, candidate.detail);
+        return;
+      }
+      if (candidate.item) hoverCandidates.push({ event, item: candidate.item });
+    });
+    return hoverCandidates;
   }
 
   function readCourseDetailFromEmbeddedPopover(item, event) {
@@ -7508,6 +7535,10 @@
         run: assertSelfTestAuditScanMergesFullPageEvents
       },
       {
+        name: '异常扫描：悬停失败前先读取完整内嵌详情',
+        run: assertSelfTestImmediateCourseDetailsBeforeHoverLimit
+      },
+      {
         name: '跑校区查询：严格方向、实体段、线上夹层和日期隔离',
         run: assertSelfTestCampusCommuteQuery
       },
@@ -8961,6 +8992,42 @@
     const reminders = result.anomalies.filter((item) => item.kind === '检测：有线上课');
     if (reminders.length !== 4) {
       throw new Error(`离屏线上课应完整识别 4 条提醒，实际 ${reminders.length} 条`);
+    }
+  }
+
+  function assertSelfTestImmediateCourseDetailsBeforeHoverLimit() {
+    const unresolved = Array.from({ length: CONFIG.maxDetailMissesPerScan }, (_, index) => makeSelfTestCourseEvent({
+      key: `immediate-unresolved-${index}`,
+      text: `无内嵌详情 ${index}`,
+      hex: '#FB5757'
+    }));
+    const embedded = makeSelfTestCourseEvent({
+      key: 'immediate-embedded-online',
+      text: '离屏内嵌线上课',
+      hex: '#FFAFDE'
+    });
+    const events = unresolved.concat(embedded);
+    const hoverCandidates = collectImmediateCourseDetailCandidates(events, (event) => {
+      if (event !== embedded) return { item: {} };
+      return {
+        item: {},
+        detail: {
+          rawText: '课程详情 课程形式：线上 校区名称：城建校区',
+          courseForm: '线上',
+          campus: '城建校区'
+        }
+      };
+    });
+
+    try {
+      if (hoverCandidates.length !== CONFIG.maxDetailMissesPerScan) {
+        throw new Error(`无内嵌详情事件应保留给悬停读取，实际 ${hoverCandidates.length} 个`);
+      }
+      if (embedded.courseForm !== '线上' || embedded.courseCampus !== '城建校区') {
+        throw new Error('即使前面已有 6 个悬停候选，也必须先读取后续离屏色块的内嵌详情');
+      }
+    } finally {
+      events.forEach((event) => state.courseDetailCache.delete(event.key));
     }
   }
 
