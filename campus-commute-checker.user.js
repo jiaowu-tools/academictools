@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.4.0
+// @version      1.4.1
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.4.0';
+  const SCRIPT_VERSION = '1.4.1';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -5763,7 +5763,7 @@
     if (teacher && !normalizedText.includes(teacher)) return false;
 
     const timeText = readDetailField(text, '时间');
-    if (timeText && isDetailTimeForEvent(timeText, event)) return true;
+    if (timeText) return isDetailTimeForEvent(timeText, event);
 
     const courseName = normalizeDetailText(readDetailField(text, '课程名称'));
     const eventText = normalizeDetailText(event.text);
@@ -6317,11 +6317,11 @@
 
   function getSelectedCampusForAudit(event) {
     if (!event) return '';
+    const colorCampus = getColorRealCampus(event);
+    if (colorCampus) return colorCampus;
     if (event.courseCampus && CONFIG.realCampuses.has(event.courseCampus)) return event.courseCampus;
     if (event.detailCampus && CONFIG.realCampuses.has(event.detailCampus)) return event.detailCampus;
     if (event.campus && CONFIG.realCampuses.has(event.campus)) return event.campus;
-    const colorCampus = CONFIG.campusByColor[normalizeHex(event.hex)];
-    if (colorCampus) return colorCampus;
     return '';
   }
 
@@ -6618,11 +6618,11 @@
 
   function getCourseRealCampus(event) {
     if (!event) return '';
+    const colorCampus = getColorRealCampus(event);
+    if (colorCampus) return colorCampus;
     if (event.courseCampus && CONFIG.realCampuses.has(event.courseCampus)) return event.courseCampus;
     if (event.detailCampus && CONFIG.realCampuses.has(event.detailCampus)) return event.detailCampus;
     if (event.campus && CONFIG.realCampuses.has(event.campus)) return event.campus;
-    const colorCampus = getColorRealCampus(event);
-    if (colorCampus) return colorCampus;
     return '';
   }
 
@@ -7541,6 +7541,10 @@
       {
         name: '异常扫描：悬停失败前先读取完整内嵌详情',
         run: assertSelfTestImmediateCourseDetailsBeforeHoverLimit
+      },
+      {
+        name: '异常扫描：同名课程详情不串台且实体颜色决定校区',
+        run: assertSelfTestSameCourseNameKeepsColorCampus
       },
       {
         name: '跑校区查询：严格方向、实体段、线上夹层和日期隔离',
@@ -9034,6 +9038,77 @@
     } finally {
       events.forEach((event) => state.courseDetailCache.delete(event.key));
     }
+  }
+
+  function assertSelfTestSameCourseNameKeepsColorCampus() {
+    const staleMorningDetail = [
+      '课程详情',
+      '教师：金潇洒',
+      '时间：09:00-09:45',
+      '课程形式：线下',
+      '校区名称：钱江校区',
+      '课程名称：精品听力'
+    ].join(' ');
+    const eveningCourse = makeSelfTestCourseEvent({
+      key: 'same-name-evening-course',
+      teacher: '金潇洒',
+      date: '2026-07-24',
+      text: '潘佳妮 精品听力',
+      campus: '城建校区',
+      hex: '#FFBF41',
+      startMinutes: 18 * 60 + 45,
+      endMinutes: 19 * 60 + 30,
+      start: '18:45',
+      end: '19:30'
+    });
+    if (isCourseDetailForEvent(staleMorningDetail, eveningCourse)) {
+      throw new Error('同名“精品听力”的上午钱江详情不应匹配晚间城建色块');
+    }
+
+    const makeEvent = (key, text, hex, startMinutes, endMinutes) => makeSelfTestCourseEvent({
+      key,
+      teacher: '金潇洒',
+      date: '2026-07-24',
+      text,
+      campus: '钱江校区',
+      hex,
+      courseForm: '线下',
+      courseCampus: '钱江校区',
+      detailCampus: '钱江校区',
+      startMinutes,
+      endMinutes,
+      start: formatMinutes(startMinutes),
+      end: formatMinutes(endMinutes)
+    });
+    const events = [
+      makeEvent('same-name-qianjiang-1', '周思言Anita 精品听力', '#FB5757', 9 * 60, 9 * 60 + 45),
+      makeEvent('same-name-qianjiang-2', '周思言Anita 精品听力', '#FB5757', 9 * 60 + 50, 10 * 60 + 35),
+      makeEvent('same-name-qianjiang-3', '徐薏涵 进阶听力', '#FB5757', 10 * 60 + 40, 11 * 60 + 25),
+      makeEvent('same-name-qianjiang-4', '徐薏涵 进阶听力', '#FB5757', 11 * 60 + 30, 12 * 60 + 15),
+      makeEvent('same-name-qianjiang-5', 'QBD2607-168 听力', '#FB5757', 13 * 60, 13 * 60 + 45),
+      makeEvent('same-name-qianjiang-6', 'QBD2607-168 听力', '#FB5757', 13 * 60 + 50, 14 * 60 + 35),
+      makeEvent('same-name-zijingang', '施胤泽 听力A', '#B290FE', 16 * 60 + 30, 17 * 60 + 15),
+      makeEvent('same-name-chengjian-1', '潘佳妮 精品听力', '#FFBF41', 18 * 60 + 45, 19 * 60 + 30),
+      makeEvent('same-name-chengjian-2', '潘佳妮 精品听力', '#FFBF41', 19 * 60 + 35, 20 * 60 + 20)
+    ];
+    const selectedCampuses = events.map((event) => getSelectedCampusForAudit(event));
+    const expectedCampuses = [
+      '钱江校区', '钱江校区', '钱江校区', '钱江校区', '钱江校区', '钱江校区',
+      '紫金港校区', '城建校区', '城建校区'
+    ];
+    if (selectedCampuses.join('|') !== expectedCampuses.join('|')) {
+      throw new Error(`实体颜色应决定校区，实际：${selectedCampuses.join('、')}`);
+    }
+    if (events.some((event) => isOnlineCourseEvent(event))) {
+      throw new Error('原始复现场景的 9 个色块均为线下课');
+    }
+
+    const result = analyze(events, makeSelfTestSettings());
+    const multiCampusAnomalies = result.anomalies.filter((item) => item.kind === '异常：存在多个校区');
+    if (multiCampusAnomalies.length !== 1 || multiCampusAnomalies[0].reason !== '老师跑了三次校区，注意查看') {
+      throw new Error(`三色课表应且只应生成 1 条多校区提醒，实际：${multiCampusAnomalies.map((item) => item.reason).join('；') || '无'}`);
+    }
+    assertNoSelfTestAnomaly(result, '异常：时间不够跑校区', '原始复现场景各段通勤时间充足，不应误报时间不足');
   }
 
   function assertSelfTestVirtualMeetingWrongCampusMismatch() {
