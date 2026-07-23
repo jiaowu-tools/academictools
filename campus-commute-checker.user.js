@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.4.1
+// @version      1.4.2
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.4.1';
+  const SCRIPT_VERSION = '1.4.2';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -6243,6 +6243,11 @@
     }
 
     const physicalCampuses = Array.from(new Set(physicalItems.map((item) => item.physicalCampus).filter(Boolean)));
+    const selectedCampusItems = context.filter((item) => item.selectedCampus);
+    const selectedCampuses = Array.from(new Set(selectedCampusItems.map((item) => item.selectedCampus)));
+    const hasOnlineCourses = context.some((item) => item.isVirtual
+      && isOnlineCourseEvent(item.event)
+      && !isMeetingEvent(item.event));
     anomalies.push(...createOnlyOnlineDifferentCampusAnomalies(context, physicalCampuses));
     anomalies.push(...createTwoColorSandwichAnomalies(events, settings));
     if (physicalCampuses.length >= 3) {
@@ -6258,6 +6263,18 @@
         reason: context.some((item) => item.isVirtual)
           ? `同一天出现 ${physicalCampuses.length} 个实体校区：${physicalCampuses.join('、')}，提示老师跑了三个校区`
           : '老师跑了三次校区，注意查看'
+      }));
+    } else if (hasOnlineCourses && selectedCampuses.length >= 3) {
+      const first = selectedCampusItems[0];
+      const last = selectedCampusItems[selectedCampusItems.length - 1];
+      anomalies.push(createCampusAuditAnomaly({
+        kind: '异常：存在多个校区',
+        previous: first.event,
+        current: last.event,
+        requiredMinutes: null,
+        availableMinutes: null,
+        blockingEvents: selectedCampusItems.slice(1, -1).map((item) => item.event),
+        reason: '有线上课，未改校区，目前课表有三个校区，注意查看'
       }));
     }
 
@@ -9072,7 +9089,7 @@
       text,
       campus: '钱江校区',
       hex,
-      courseForm: '线下',
+      courseForm: '线上',
       courseCampus: '钱江校区',
       detailCampus: '钱江校区',
       startMinutes,
@@ -9099,14 +9116,14 @@
     if (selectedCampuses.join('|') !== expectedCampuses.join('|')) {
       throw new Error(`实体颜色应决定校区，实际：${selectedCampuses.join('、')}`);
     }
-    if (events.some((event) => isOnlineCourseEvent(event))) {
-      throw new Error('原始复现场景的 9 个色块均为线下课');
+    if (!events.every((event) => isOnlineCourseEvent(event))) {
+      throw new Error('原始复现场景的 9 个色块均应由课程详情识别为线上课');
     }
 
     const result = analyze(events, makeSelfTestSettings());
     const multiCampusAnomalies = result.anomalies.filter((item) => item.kind === '异常：存在多个校区');
-    if (multiCampusAnomalies.length !== 1 || multiCampusAnomalies[0].reason !== '老师跑了三次校区，注意查看') {
-      throw new Error(`三色课表应且只应生成 1 条多校区提醒，实际：${multiCampusAnomalies.map((item) => item.reason).join('；') || '无'}`);
+    if (multiCampusAnomalies.length !== 1 || multiCampusAnomalies[0].reason !== '有线上课，未改校区，目前课表有三个校区，注意查看') {
+      throw new Error(`三色线上课表应且只应生成 1 条多校区提醒，实际：${multiCampusAnomalies.map((item) => item.reason).join('；') || '无'}`);
     }
     assertNoSelfTestAnomaly(result, '异常：时间不够跑校区', '原始复现场景各段通勤时间充足，不应误报时间不足');
   }
