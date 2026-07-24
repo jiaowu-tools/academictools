@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.4.4
+// @version      1.4.5
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.4.4';
+  const SCRIPT_VERSION = '1.4.5';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2817,7 +2817,7 @@
 
   function parseSmartMeetingOccupyName(text) {
     const source = String(text || '').trim();
-    if (/^\s*(?:老师[，,]\s*)?辛苦(?:老师)?[，,]?\s*占空(?:一下)?(?=[\u4e00-\u9fa5A-Za-z]{2,8}老师?)/u.test(source)) return '占空';
+    if (/^\s*(?:老师[，,]\s*)?(?:辛苦(?:老师)?[，,]?\s*)?占空(?:一下)?(?=[\u4e00-\u9fa5A-Za-z]{2,8}老师?)/u.test(source)) return '占空';
     const match = source.match(/^\s*(?:辛苦老师)?(?:帮|给)?\s*((?!我)[\u4e00-\u9fa5A-Za-z]{2,8})占空(?:一下)?/u);
     return match ? `${match[1]}占空` : '';
   }
@@ -7744,6 +7744,12 @@
     });
     if (getMeetingDraftClassroomPrefixes(occupyTeacherDraft).join(',') !== 'M') {
       throw new Error(`占空原文回归应自动选择 M 教室，实际：${getMeetingDraftClassroomPrefixes(occupyTeacherDraft).join(',')}`);
+    }
+    const occupyTeacherWithoutIntro = parseSmartMeetingText('占空一下戴天成老师7.31的16:35-18:10的空，钱江校区', {
+      now: new Date(2026, 0, 1)
+    });
+    if (!occupyTeacherWithoutIntro.ok || occupyTeacherWithoutIntro.meetingName !== '占空' || occupyTeacherWithoutIntro.teachers.join(',') !== '戴天成' || occupyTeacherWithoutIntro.date !== '2026-07-31' || occupyTeacherWithoutIntro.startTime !== '16:35' || occupyTeacherWithoutIntro.endTime !== '18:10' || occupyTeacherWithoutIntro.durationMinutes !== 95 || occupyTeacherWithoutIntro.meetingMode !== 'offline' || occupyTeacherWithoutIntro.meetingCampus !== '钱江校区') {
+      throw new Error(`无“辛苦”前缀的占空原文回归失败：${JSON.stringify({ meetingName: occupyTeacherWithoutIntro.meetingName, teachers: occupyTeacherWithoutIntro.teachers, date: occupyTeacherWithoutIntro.date, startTime: occupyTeacherWithoutIntro.startTime, endTime: occupyTeacherWithoutIntro.endTime, durationMinutes: occupyTeacherWithoutIntro.durationMinutes, meetingMode: occupyTeacherWithoutIntro.meetingMode, meetingCampus: occupyTeacherWithoutIntro.meetingCampus })}`);
     }
     const supervisorRecurring = parseSmartMeetingText('主管会：8月开始每周二9:00-10:35（M1001）\n参会人：雪梨', {
       now: new Date(2026, 6, 15, 9, 0)
