@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.4.2
+// @version      1.4.4
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.4.2';
+  const SCRIPT_VERSION = '1.4.4';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2664,8 +2664,11 @@
     ];
     for (const pattern of patterns) {
       const match = source.match(pattern);
-      const names = parsePastedTeacherNames(match?.[1] || '');
-      if (names.length) return match[1];
+      const cleanedSegment = String(match?.[1] || '')
+        .replace(/^\s*一下/u, '')
+        .replace(/老师\s*$/u, '');
+      const names = parsePastedTeacherNames(cleanedSegment);
+      if (names.length) return cleanedSegment;
     }
     return '';
   }
@@ -2814,6 +2817,7 @@
 
   function parseSmartMeetingOccupyName(text) {
     const source = String(text || '').trim();
+    if (/^\s*(?:老师[，,]\s*)?辛苦(?:老师)?[，,]?\s*占空(?:一下)?(?=[\u4e00-\u9fa5A-Za-z]{2,8}老师?)/u.test(source)) return '占空';
     const match = source.match(/^\s*(?:辛苦老师)?(?:帮|给)?\s*((?!我)[\u4e00-\u9fa5A-Za-z]{2,8})占空(?:一下)?/u);
     return match ? `${match[1]}占空` : '';
   }
@@ -7719,6 +7723,28 @@
   }
 
   function assertSelfTestSmartMeetingTextParsing() {
+    const occupyTeacherDraft = parseSmartMeetingText('老师，辛苦占空一下潘沁雯老师7.31下午紫金2:55-3:15，20分钟就行', {
+      now: new Date(2026, 0, 1)
+    });
+    const occupyTeacherExpected = {
+      date: '2026-07-31',
+      startTime: '14:55',
+      endTime: '15:15',
+      durationMinutes: 20,
+      timePeriod: '下午',
+      meetingMode: 'offline',
+      meetingCampus: '紫金港',
+      meetingName: '占空',
+      teachers: '潘沁雯'
+    };
+    if (!occupyTeacherDraft.ok) throw new Error(`占空原文回归识别失败：${occupyTeacherDraft.message}`);
+    Object.entries(occupyTeacherExpected).forEach(([key, value]) => {
+      const actual = key === 'teachers' ? occupyTeacherDraft.teachers.join(',') : occupyTeacherDraft[key];
+      if (actual !== value) throw new Error(`占空原文回归 ${key} 应为 ${value}，实际：${actual}`);
+    });
+    if (getMeetingDraftClassroomPrefixes(occupyTeacherDraft).join(',') !== 'M') {
+      throw new Error(`占空原文回归应自动选择 M 教室，实际：${getMeetingDraftClassroomPrefixes(occupyTeacherDraft).join(',')}`);
+    }
     const supervisorRecurring = parseSmartMeetingText('主管会：8月开始每周二9:00-10:35（M1001）\n参会人：雪梨', {
       now: new Date(2026, 6, 15, 9, 0)
     });
