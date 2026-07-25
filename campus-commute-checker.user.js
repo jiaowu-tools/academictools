@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.4.5
+// @version      1.4.6
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.4.5';
+  const SCRIPT_VERSION = '1.4.6';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2276,7 +2276,8 @@
     const now = options.now || new Date();
     const recurringDraft = parseSmartRecurringMeetingText(raw, normalizedText, compactRaw, now);
     if (recurringDraft) return recurringDraft;
-    const date = parseSmartMeetingDate(normalizedText, now);
+    const dateRange = parseSmartMeetingDateRange(normalizedText, now);
+    const date = dateRange?.startDate || parseSmartMeetingDate(normalizedText, now);
     const startMinutes = parseSmartMeetingStartMinutes(normalizedText);
     if (!date) return { ok: false, message: '没有识别到会议日期，例如 7.9 或 7月9日。' };
     if (!Number.isFinite(startMinutes)) return { ok: false, message: '没有识别到起始时间，例如 18:30。' };
@@ -2293,8 +2294,9 @@
     const baseMeetingName = parseSmartMeetingName(raw, compactRaw);
     const meetingName = appendZhangNingOfflineCampusToMeetingName(baseMeetingName, teachers, meetingMode, campusInfo);
     return buildSmartMeetingDraft({
-      sourceKind: 'smart-meeting-text',
+      sourceKind: dateRange ? 'smart-date-range-meeting-text' : 'smart-meeting-text',
       date,
+      endDate: dateRange?.endDate,
       startMinutes,
       endMinutes,
       durationMinutes,
@@ -2517,6 +2519,26 @@
     return '';
   }
 
+  function parseSmartMeetingDateRange(text, now = new Date()) {
+    const source = String(text || '');
+    const pattern = /(?:(\d{4})年)?(\d{1,2})(?:月|[\/.-])(\d{1,2})\s*(?:至|到|-|~|～)\s*(?:(\d{4})年)?(\d{1,2})(?:月|[\/.-])(\d{1,2})/gu;
+    let match;
+    while ((match = pattern.exec(source))) {
+      const startYear = match[1] ? Number(match[1]) : now.getFullYear();
+      const startMonth = Number(match[2]);
+      const startDay = Number(match[3]);
+      const endMonth = Number(match[5]);
+      const endDay = Number(match[6]);
+      const endYear = match[4]
+        ? Number(match[4])
+        : (endMonth < startMonth || (endMonth === startMonth && endDay < startDay) ? startYear + 1 : startYear);
+      const startDate = makeDateInput(startYear, startMonth, startDay);
+      const endDate = makeDateInput(endYear, endMonth, endDay);
+      if (startDate && endDate) return { startDate, endDate };
+    }
+    return null;
+  }
+
   function getSmartMeetingRelativeDayOffset(text) {
     if (text === '明天') return 1;
     if (text === '后天') return 2;
@@ -2574,7 +2596,7 @@
 
   function findSmartMeetingClockMatches(text) {
     const source = String(text || '');
-    const pattern = /(^|每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7]|[^\d零〇一二两三四五六七八九十])((?:[01]?\d|2[0-3]|[零〇一二两三四五六七八九十两]{1,3}))\s*([:：点时])\s*([0-5]?\d|[零〇一二两三四五六七八九十两]{1,3})?\s*(半|分)?/gu;
+    const pattern = /(^|每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7]|[^\d零〇一二两三四五六七八九十])((?:[01]?\d|2[0-3]|[零〇一二两三四五六七八九十两]{1,3}))\s*([:：点时])\s*([0-5]?\d|[零〇一二两三四五六七八九十两]{1,3})?\s*(半|分)?(?!间)/gu;
     const matches = [];
     let match;
     while ((match = pattern.exec(source))) {
@@ -2644,6 +2666,8 @@
       || extractSmartMeetingOccupyTeacherSegment(compactSource)
       || extractSmartMeetingPossessiveTeacherSegment(rawSource)
       || extractSmartMeetingPossessiveTeacherSegment(compactSource)
+      || extractSmartMeetingTeacherBeforeDetailsSegment(rawSource)
+      || extractSmartMeetingTeacherBeforeDetailsSegment(compactSource)
       || extractSmartMeetingUnlabeledTeacherSegment(rawSource);
     return matched ? parsePastedTeacherNames(matched) : [];
   }
@@ -2710,6 +2734,12 @@
     return '';
   }
 
+  function extractSmartMeetingTeacherBeforeDetailsSegment(text) {
+    const source = String(text || '');
+    const match = source.match(/(?:^|[\n\r,，;；。\s])\s*([\u4e00-\u9fa5A-Za-z]{2,8})(?:老师)?\s*(?=[,，;；]\s*(?:线上|线下|虚拟校区|虚拟教室|校区|教室))/u);
+    return match ? match[1] : '';
+  }
+
   function isSmartMeetingDetailLine(text) {
     return /(?:时间|日期|地点|校区|会议形式|形式|教室|会议名称|名称|主题|学生待定|学生|学员|线下|线上)/u.test(String(text || ''))
       || /(?:上午|下午|晚上|晚间|中午|早上)?\d{1,2}[:：点时]/u.test(String(text || ''));
@@ -2749,6 +2779,7 @@
   function getSmartMeetingClassroomPrefixes(text, meetingMode, campusInfo) {
     if (!campusInfo?.campus) return [];
     const source = String(text || '');
+    if (/虚拟教室/u.test(source)) return ['虚拟教室'];
     if (/小教室/u.test(source)) return ['V'];
     if (/会议室/u.test(source)) return ['会议室', 'M'];
     return ['M'];
@@ -2759,6 +2790,7 @@
     const explicitLocation = extractSmartMeetingExplicitLocation(normalized);
     if (explicitLocation) return explicitLocation;
     const rows = [
+      { pattern: /虚拟校区|虚拟教室/, campus: '虚拟校区', aliases: ['虚拟校区', '虚拟'] },
       { pattern: /\b(?:CUA|CUB)\b|(?:CUA|CUB)\d+/i, campus: '城建大厦', aliases: ['城建大厦', '城建校区', '城建', 'CUA', 'CUB'] },
       { pattern: /\bQUA\b|QUA\d+/i, campus: '钱江校区', aliases: ['钱江校区', '钱江', 'QUA'] },
       { pattern: /\bZUA\b|ZUA\d+/i, campus: '紫金港', aliases: ['紫金港', '紫金港校区', '紫金', 'ZUA'] },
@@ -2785,6 +2817,7 @@
   function matchSmartMeetingCampusText(text) {
     const source = String(text || '');
     const rows = [
+      { pattern: /虚拟校区|虚拟教室/, campus: '虚拟校区', aliases: ['虚拟校区', '虚拟'] },
       { pattern: /\b(?:CUA|CUB)\b|(?:CUA|CUB)\d+/i, campus: '城建大厦', aliases: ['城建大厦', '城建校区', '城建', 'CUA', 'CUB'] },
       { pattern: /\bQUA\b|QUA\d+/i, campus: '钱江校区', aliases: ['钱江校区', '钱江', 'QUA'] },
       { pattern: /\bZUA\b|ZUA\d+/i, campus: '紫金港', aliases: ['紫金港', '紫金港校区', '紫金', 'ZUA'] },
@@ -2913,6 +2946,7 @@
 
   function trimSmartMeetingNameIntro(text) {
     return String(text || '')
+      .replace(/^.*?不是单次会议\s*[:：]\s*/u, '')
       .replace(/^.*?(?:排一下|排一个|排一次|排个|安排一下|安排一个|安排一次|安排个|安排|排)\s*/u, '')
       .replace(/^(?:会议|家长会)?(?:名称|主题)\s*[:：]\s*/u, '')
       .replace(/^会议\s*[:：]\s*/u, '')
@@ -2928,6 +2962,7 @@
   function cutSmartMeetingNameBeforeDetails(text) {
     const source = String(text || '');
     const cutPatterns = [
+      /(?:(?:\d{4})年)?\d{1,2}(?:月|[\/.-])\d{1,2}\s*(?:至|到|-|~|～)\s*(?:(?:\d{4})年)?\d{1,2}(?:月|[\/.-])\d{1,2}/u,
       /(?:会议)?(?:日期|起始时间|开始时间|上课时间|排课时间)\s*[:：]?/u,
       /时间\s*[:：]?/u,
       /(?:参会人员|参与人员|参加人员|出席人员|参会人|参与人|参加人|出席人|参会|参与|参加|出席)\s*[:：]?/u,
@@ -7750,6 +7785,33 @@
     });
     if (!occupyTeacherWithoutIntro.ok || occupyTeacherWithoutIntro.meetingName !== '占空' || occupyTeacherWithoutIntro.teachers.join(',') !== '戴天成' || occupyTeacherWithoutIntro.date !== '2026-07-31' || occupyTeacherWithoutIntro.startTime !== '16:35' || occupyTeacherWithoutIntro.endTime !== '18:10' || occupyTeacherWithoutIntro.durationMinutes !== 95 || occupyTeacherWithoutIntro.meetingMode !== 'offline' || occupyTeacherWithoutIntro.meetingCampus !== '钱江校区') {
       throw new Error(`无“辛苦”前缀的占空原文回归失败：${JSON.stringify({ meetingName: occupyTeacherWithoutIntro.meetingName, teachers: occupyTeacherWithoutIntro.teachers, date: occupyTeacherWithoutIntro.date, startTime: occupyTeacherWithoutIntro.startTime, endTime: occupyTeacherWithoutIntro.endTime, durationMinutes: occupyTeacherWithoutIntro.durationMinutes, meetingMode: occupyTeacherWithoutIntro.meetingMode, meetingCampus: occupyTeacherWithoutIntro.meetingCampus })}`);
+    }
+    const dateRangeVirtualMeeting = parseSmartMeetingText([
+      '测试预排会议，不是单次会议：全天请假，8.1-9.5',
+      '时间：08:30-18:10',
+      '马思雨，线上虚拟校区虚拟教室'
+    ].join('\n'), {
+      now: new Date(2026, 0, 1)
+    });
+    const dateRangeVirtualExpected = {
+      date: '2026-08-01',
+      endDate: '2026-09-05',
+      startTime: '08:30',
+      endTime: '18:10',
+      durationMinutes: 580,
+      timePeriod: '上午',
+      meetingMode: 'online',
+      meetingCampus: '虚拟校区',
+      meetingName: '全天请假',
+      teachers: '马思雨'
+    };
+    if (!dateRangeVirtualMeeting.ok) throw new Error(`预排会议原文回归识别失败：${dateRangeVirtualMeeting.message}`);
+    Object.entries(dateRangeVirtualExpected).forEach(([key, value]) => {
+      const actual = key === 'teachers' ? dateRangeVirtualMeeting.teachers.join(',') : dateRangeVirtualMeeting[key];
+      if (actual !== value) throw new Error(`预排会议原文回归 ${key} 应为 ${value}，实际：${actual}`);
+    });
+    if (getMeetingDraftClassroomPrefixes(dateRangeVirtualMeeting).join(',') !== '虚拟教室') {
+      throw new Error(`预排会议原文回归教室应为虚拟教室，实际：${getMeetingDraftClassroomPrefixes(dateRangeVirtualMeeting).join(',')}`);
     }
     const supervisorRecurring = parseSmartMeetingText('主管会：8月开始每周二9:00-10:35（M1001）\n参会人：雪梨', {
       now: new Date(2026, 6, 15, 9, 0)
