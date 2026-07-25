@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.4.6
+// @version      1.4.7
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.4.6';
+  const SCRIPT_VERSION = '1.4.7';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2850,6 +2850,7 @@
 
   function parseSmartMeetingOccupyName(text) {
     const source = String(text || '').trim();
+    if (/^\s*占空\s*(?:[\n\r]|$)/u.test(source)) return '占空';
     if (/^\s*(?:老师[，,]\s*)?(?:辛苦(?:老师)?[，,]?\s*)?占空(?:一下)?(?=[\u4e00-\u9fa5A-Za-z]{2,8}老师?)/u.test(source)) return '占空';
     const match = source.match(/^\s*(?:辛苦老师)?(?:帮|给)?\s*((?!我)[\u4e00-\u9fa5A-Za-z]{2,8})占空(?:一下)?/u);
     return match ? `${match[1]}占空` : '';
@@ -7758,6 +7759,31 @@
   }
 
   function assertSelfTestSmartMeetingTextParsing() {
+    const standaloneOccupyDraft = parseSmartMeetingText([
+      '占空',
+      '郝崇研明天的09:00-10:40，钱江线下'
+    ].join('\n'), {
+      now: new Date(2026, 6, 25, 9, 0)
+    });
+    const standaloneOccupyExpected = {
+      date: '2026-07-26',
+      startTime: '09:00',
+      endTime: '10:40',
+      durationMinutes: 100,
+      timePeriod: '上午',
+      meetingMode: 'offline',
+      meetingCampus: '钱江校区',
+      meetingName: '占空',
+      teachers: '郝崇研'
+    };
+    if (!standaloneOccupyDraft.ok) throw new Error(`独立占空原文回归识别失败：${standaloneOccupyDraft.message}`);
+    Object.entries(standaloneOccupyExpected).forEach(([key, value]) => {
+      const actual = key === 'teachers' ? standaloneOccupyDraft.teachers.join(',') : standaloneOccupyDraft[key];
+      if (actual !== value) throw new Error(`独立占空原文回归 ${key} 应为 ${value}，实际：${actual}`);
+    });
+    if (getMeetingDraftClassroomPrefixes(standaloneOccupyDraft).join(',') !== 'M') {
+      throw new Error(`独立占空原文回归应自动选择 M 教室，实际：${getMeetingDraftClassroomPrefixes(standaloneOccupyDraft).join(',')}`);
+    }
     const occupyTeacherDraft = parseSmartMeetingText('老师，辛苦占空一下潘沁雯老师7.31下午紫金2:55-3:15，20分钟就行', {
       now: new Date(2026, 0, 1)
     });
