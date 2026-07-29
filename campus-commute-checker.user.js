@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.4.9
+// @version      1.4.10
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.4.9';
+  const SCRIPT_VERSION = '1.4.10';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2276,21 +2276,21 @@
     const now = options.now || new Date();
     const recurringDraft = parseSmartRecurringMeetingText(raw, normalizedText, compactRaw, now);
     if (recurringDraft) return recurringDraft;
-    const dateRange = parseSmartMeetingDateRange(normalizedText, now);
-    const date = dateRange?.startDate || parseSmartMeetingDate(normalizedText, now);
-    const startMinutes = parseSmartMeetingStartMinutes(normalizedText);
+    const dateRange = parseSmartMeetingDateRange(raw, now);
+    const date = dateRange?.startDate || parseSmartMeetingDate(raw, now);
+    const startMinutes = parseSmartMeetingStartMinutes(raw);
     if (!date) return { ok: false, message: '没有识别到会议日期，例如 7.9 或 7月9日。' };
     if (!Number.isFinite(startMinutes)) return { ok: false, message: '没有识别到起始时间，例如 18:30。' };
 
-    const explicitEndMinutes = parseSmartMeetingEndMinutes(normalizedText, startMinutes);
+    const explicitEndMinutes = parseSmartMeetingEndMinutes(raw, startMinutes);
     const durationMinutes = Number.isFinite(explicitEndMinutes)
       ? explicitEndMinutes - startMinutes
-      : parseSmartMeetingDurationMinutes(normalizedText) || getDefaultSmartMeetingDurationMinutes();
+      : parseSmartMeetingDurationMinutes(raw) || getDefaultSmartMeetingDurationMinutes();
     const endMinutes = Number.isFinite(explicitEndMinutes) ? explicitEndMinutes : startMinutes + durationMinutes;
     const teachers = parseSmartMeetingTeachers(raw, compactRaw);
-    const meetingMode = parseSmartMeetingMode(normalizedText);
-    const campusInfo = parseSmartMeetingCampus(normalizedText);
-    const meetingClassroomPrefixes = getSmartMeetingClassroomPrefixes(normalizedText, meetingMode, campusInfo);
+    const meetingMode = parseSmartMeetingMode(raw);
+    const campusInfo = parseSmartMeetingCampus(raw);
+    const meetingClassroomPrefixes = getSmartMeetingClassroomPrefixes(raw, meetingMode, campusInfo);
     const baseMeetingName = parseSmartMeetingName(raw, compactRaw);
     const meetingName = appendZhangNingOfflineCampusToMeetingName(baseMeetingName, teachers, meetingMode, campusInfo);
     return buildSmartMeetingDraft({
@@ -2547,8 +2547,15 @@
   }
 
   function parseSmartMeetingStartMinutes(text) {
-    const match = findSmartMeetingClockMatches(text)[0];
-    return match ? match.minutes : NaN;
+    const source = String(text || '');
+    const matches = findSmartMeetingClockMatches(source);
+    for (let index = 0; index < matches.length - 1; index += 1) {
+      const current = matches[index];
+      const next = matches[index + 1];
+      const between = source.slice(current.endIndex, next.index);
+      if (/^\s*(?:-|－|—|–|到|至|~|～)\s*$/u.test(between)) return current.minutes;
+    }
+    return matches[0]?.minutes ?? NaN;
   }
 
   function parseSmartMeetingEndMinutes(text, startMinutes) {
@@ -2780,7 +2787,7 @@
 
   function parseSmartMeetingMode(text) {
     const normalized = String(text || '');
-    if (/线上|在线|腾讯会议|钉钉|飞书|直播|远程/.test(normalized)) return 'online';
+    if (/线上|在线|腾讯会议|钉钉|飞书|直播|远程|虚拟校区|虚拟教室/.test(normalized)) return 'online';
     return 'offline';
   }
 
@@ -2790,6 +2797,7 @@
     if (/虚拟教室/u.test(source)) return ['虚拟教室'];
     const explicitRoom = source.match(/(?:教室\s*)?([A-Z]\d{3,5})\b/u);
     if (explicitRoom) return [explicitRoom[1]];
+    if (campusInfo.campus === '虚拟校区') return ['虚拟教室'];
     if (/小教室/u.test(source)) return ['V'];
     if (/会议室/u.test(source)) return ['会议室', 'M'];
     return ['M'];
@@ -2847,6 +2855,8 @@
     if (explicitName) return explicitName;
     const occupyName = parseSmartMeetingOccupyName(rawText) || parseSmartMeetingOccupyName(compactText);
     if (occupyName) return occupyName;
+    const scheduleRestrictionName = parseSmartMeetingScheduleRestrictionName(rawText);
+    if (scheduleRestrictionName) return scheduleRestrictionName;
     const leadingName = parseSmartMeetingLeadingName(rawText);
     if (leadingName) return leadingName;
     const namedAfterTime = parseSmartMeetingNameAfterClock(rawText);
@@ -2856,6 +2866,13 @@
     const afterIntro = trimSmartMeetingNameIntro(text);
     const beforeDetails = cutSmartMeetingNameBeforeDetails(afterIntro);
     return cleanSmartMeetingName(beforeDetails);
+  }
+
+  function parseSmartMeetingScheduleRestrictionName(text) {
+    const firstLine = String(text || '').split(/[\n\r]+/u).map((line) => line.trim()).find(Boolean) || '';
+    return /^(?:上午|下午|晚上|晚间|中午|早上)?\d{1,2}[:：]\d{2}\s*(?:以后|之后|起|开始)\s*不排课$/u.test(firstLine)
+      ? firstLine
+      : '';
   }
 
   function parseSmartMeetingOccupyName(text) {
@@ -7794,6 +7811,34 @@
     });
     if (getMeetingDraftClassroomPrefixes(communicationMeeting).join(',') !== 'V1002') {
       throw new Error(`沟通会议原文回归教室应为 V1002，实际：${getMeetingDraftClassroomPrefixes(communicationMeeting).join(',')}`);
+    }
+    const noClassAfterTimeDraft = parseSmartMeetingText([
+      '15:00以后不排课',
+      '8.8',
+      '15:00-18:10',
+      '虚拟校区',
+      '郑菲'
+    ].join('\n'), {
+      now: new Date(2026, 6, 29, 9, 0)
+    });
+    const noClassAfterTimeExpected = {
+      date: '2026-08-08',
+      startTime: '15:00',
+      endTime: '18:10',
+      durationMinutes: 190,
+      timePeriod: '下午',
+      meetingMode: 'online',
+      meetingCampus: '虚拟校区',
+      meetingName: '15:00以后不排课',
+      teachers: '郑菲'
+    };
+    if (!noClassAfterTimeDraft.ok) throw new Error(`15点后不排课原文回归识别失败：${noClassAfterTimeDraft.message}`);
+    Object.entries(noClassAfterTimeExpected).forEach(([key, value]) => {
+      const actual = key === 'teachers' ? noClassAfterTimeDraft.teachers.join(',') : noClassAfterTimeDraft[key];
+      if (actual !== value) throw new Error(`15点后不排课原文回归 ${key} 应为 ${value}，实际：${actual}`);
+    });
+    if (getMeetingDraftClassroomPrefixes(noClassAfterTimeDraft).join(',') !== '虚拟教室') {
+      throw new Error(`15点后不排课原文回归教室应为虚拟教室，实际：${getMeetingDraftClassroomPrefixes(noClassAfterTimeDraft).join(',')}`);
     }
     const standaloneOccupyDraft = parseSmartMeetingText([
       '占空',
