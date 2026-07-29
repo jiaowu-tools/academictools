@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.4.8
+// @version      1.4.9
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.4.8';
+  const SCRIPT_VERSION = '1.4.9';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -7534,6 +7534,10 @@
         run: assertSelfTestMeetingDayOffFullDay
       },
       {
+        name: '排会议：带时间的空出占用不能误报可排',
+        run: assertSelfTestMeetingNoCourseOccupy
+      },
+      {
         name: '排会议：半日日期范围不吃核对新增规则',
         run: assertSelfTestMeetingKeepsLegacyRangeParsing
       },
@@ -8526,6 +8530,31 @@
     });
     if (source.startMinutes !== 9 * 60 || source.endMinutes !== 18 * 60 + 10) {
       throw new Error(`无时间调休应按全天不可排会议，实际 ${formatMinutes(source.startMinutes)}-${formatMinutes(source.endMinutes)}`);
+    }
+  }
+
+  function assertSelfTestMeetingNoCourseOccupy() {
+    const event = {
+      key: 'self-test-2026-08-08-occupy',
+      teacher: '测试老师',
+      date: '2026-08-08',
+      text: '8.8号17:20后不排课全体空出',
+      type: 'online',
+      isMeeting: true,
+      startMinutes: 17 * 60 + 25,
+      endMinutes: 20 * 60 + 35
+    };
+    const settings = {
+      windowStartMinutes: 9 * 60,
+      windowEndMinutes: 18 * 60 + 10
+    };
+    const blockers = getMeetingBlockingEvents([event], ['测试老师'], '2026-08-08', settings);
+    if (blockers.length !== 1 || blockers[0] !== event) {
+      throw new Error('带时间的空出占用应进入会议阻塞事件');
+    }
+    const interval = eventToMeetingInterval(event, settings);
+    if (!interval || interval.startMinutes !== 17 * 60 + 20 || interval.endMinutes !== 18 * 60 + 10) {
+      throw new Error(`空出占用阻塞区间错误：${interval ? `${formatMinutes(interval.startMinutes)}-${formatMinutes(interval.endMinutes)}` : '(空)'}`);
     }
   }
 
@@ -12811,7 +12840,6 @@
     return (events || []).filter((event) => {
       if (!event || !teacherSet.has(event.teacher) || event.date !== date) return false;
       if (!isFiniteMeetingTime(event)) return false;
-      if (isNoCourseDayOffEvent(event)) return false;
       return Boolean(eventToMeetingInterval(event, settings));
     });
   }
