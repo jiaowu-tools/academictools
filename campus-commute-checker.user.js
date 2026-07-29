@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.4.7
+// @version      1.4.8
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.4.7';
+  const SCRIPT_VERSION = '1.4.8';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2668,6 +2668,8 @@
       || extractSmartMeetingPossessiveTeacherSegment(compactSource)
       || extractSmartMeetingTeacherBeforeDetailsSegment(rawSource)
       || extractSmartMeetingTeacherBeforeDetailsSegment(compactSource)
+      || extractSmartMeetingTeacherAfterClassroomSegment(rawSource)
+      || extractSmartMeetingTeacherAfterClassroomSegment(compactSource)
       || extractSmartMeetingUnlabeledTeacherSegment(rawSource);
     return matched ? parsePastedTeacherNames(matched) : [];
   }
@@ -2740,6 +2742,12 @@
     return match ? match[1] : '';
   }
 
+  function extractSmartMeetingTeacherAfterClassroomSegment(text) {
+    const source = String(text || '');
+    const match = source.match(/(?:教室\s*)?[A-Z]\d{3,5}\s*([\u4e00-\u9fa5A-Za-z]{2,8}(?:\s*(?:和|与|、|,|，|\+|＋)\s*[\u4e00-\u9fa5A-Za-z]{2,8})*)\s*$/u);
+    return match ? match[1].replace(/[和与]/gu, ',') : '';
+  }
+
   function isSmartMeetingDetailLine(text) {
     return /(?:时间|日期|地点|校区|会议形式|形式|教室|会议名称|名称|主题|学生待定|学生|学员|线下|线上)/u.test(String(text || ''))
       || /(?:上午|下午|晚上|晚间|中午|早上)?\d{1,2}[:：点时]/u.test(String(text || ''));
@@ -2780,6 +2788,8 @@
     if (!campusInfo?.campus) return [];
     const source = String(text || '');
     if (/虚拟教室/u.test(source)) return ['虚拟教室'];
+    const explicitRoom = source.match(/(?:教室\s*)?([A-Z]\d{3,5})\b/u);
+    if (explicitRoom) return [explicitRoom[1]];
     if (/小教室/u.test(source)) return ['V'];
     if (/会议室/u.test(source)) return ['会议室', 'M'];
     return ['M'];
@@ -7759,6 +7769,28 @@
   }
 
   function assertSelfTestSmartMeetingTextParsing() {
+    const communicationMeeting = parseSmartMeetingText('潘沁雯-庄佳佳沟通  9.4上午11:40 15分钟，城建校区 V1002 潘沁雯和庄佳佳', {
+      now: new Date(2026, 6, 25, 9, 0)
+    });
+    const communicationExpected = {
+      date: '2026-09-04',
+      startTime: '11:40',
+      endTime: '11:55',
+      durationMinutes: 15,
+      timePeriod: '上午',
+      meetingMode: 'offline',
+      meetingCampus: '城建大厦',
+      meetingName: '潘沁雯-庄佳佳沟通',
+      teachers: '潘沁雯,庄佳佳'
+    };
+    if (!communicationMeeting.ok) throw new Error(`沟通会议原文回归识别失败：${communicationMeeting.message}`);
+    Object.entries(communicationExpected).forEach(([key, value]) => {
+      const actual = key === 'teachers' ? communicationMeeting.teachers.join(',') : communicationMeeting[key];
+      if (actual !== value) throw new Error(`沟通会议原文回归 ${key} 应为 ${value}，实际：${actual}`);
+    });
+    if (getMeetingDraftClassroomPrefixes(communicationMeeting).join(',') !== 'V1002') {
+      throw new Error(`沟通会议原文回归教室应为 V1002，实际：${getMeetingDraftClassroomPrefixes(communicationMeeting).join(',')}`);
+    }
     const standaloneOccupyDraft = parseSmartMeetingText([
       '占空',
       '郝崇研明天的09:00-10:40，钱江线下'
