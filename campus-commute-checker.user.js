@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.4.10
+// @version      1.5.1
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.4.10';
+  const SCRIPT_VERSION = '1.5.1';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2757,7 +2757,17 @@
 
   function isSmartMeetingDetailLine(text) {
     return /(?:时间|日期|地点|校区|会议形式|形式|教室|会议名称|名称|主题|学生待定|学生|学员|线下|线上)/u.test(String(text || ''))
-      || /(?:上午|下午|晚上|晚间|中午|早上)?\d{1,2}[:：点时]/u.test(String(text || ''));
+      || /(?:上午|下午|晚上|晚间|中午|早上)?\d{1,2}[:：点时]/u.test(String(text || ''))
+      || isSmartMeetingConfirmationNoteLine(text);
+  }
+
+  function isSmartMeetingConfirmationNoteLine(text) {
+    const source = String(text || '').trim();
+    if (!source) return false;
+    return /(?:^|[,，;；。\s])(?:OK|ok|好的|可以的|没问题)(?:的|了|啦|哈|呀|噢|哦)?(?:$|[,，;；。\s])/u.test(source)
+      || /(?:截图|图片).{0,8}(?:私信|发我|发你|另发|单独发)/u.test(source)
+      || /(?:已|已经)?(?:跟|和|同|与).{0,12}(?:沟通|确认|说好|约好)/u.test(source)
+      || /(?:给的时间|确认的时间|时间已确认)/u.test(source);
   }
 
   function isLikelyStandaloneTeacherName(name) {
@@ -2853,6 +2863,8 @@
   function parseSmartMeetingName(rawText, compactText) {
     const explicitName = parseSmartMeetingExplicitName(rawText) || parseSmartMeetingExplicitName(compactText);
     if (explicitName) return explicitName;
+    const standaloneName = parseSmartMeetingStandaloneName(rawText);
+    if (standaloneName) return standaloneName;
     const occupyName = parseSmartMeetingOccupyName(rawText) || parseSmartMeetingOccupyName(compactText);
     if (occupyName) return occupyName;
     const scheduleRestrictionName = parseSmartMeetingScheduleRestrictionName(rawText);
@@ -2866,6 +2878,23 @@
     const afterIntro = trimSmartMeetingNameIntro(text);
     const beforeDetails = cutSmartMeetingNameBeforeDetails(afterIntro);
     return cleanSmartMeetingName(beforeDetails);
+  }
+
+  function parseSmartMeetingStandaloneName(text) {
+    const lines = String(text || '')
+      .split(/[\n\r]+/u)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    for (const line of lines) {
+      if (isSmartMeetingConfirmationNoteLine(line) || isSmartMeetingDetailLine(line)) continue;
+      if (/(?:老师|参会|参与|参加|出席|人员)/u.test(line)) continue;
+      if (/[+＋，、；;]/u.test(line)) continue;
+      if (/^(?:辛苦|麻烦|请|帮我|给我|老师).*(?:排|安排|占空)/u.test(line)) continue;
+      if (!/(?:会|会议|沟通|规划|梳理|咨询|分享|培训|复盘|面谈|交流|讨论|批课|占空|排课|不排课)$/u.test(line)) continue;
+      const name = cleanSmartMeetingName(line);
+      if (name) return name;
+    }
+    return '';
   }
 
   function parseSmartMeetingScheduleRestrictionName(text) {
@@ -3437,10 +3466,6 @@
       const roomOk = classroomResult.ok;
       result.classroomDropdown = classroomResult.dropdown;
       (roomOk ? result.filled : result.missed).push('教室');
-      if (roomOk && getMeetingCampusFillValues(draft).length) {
-        await sleep(180);
-        await selectMeetingFormOption('校区', getMeetingCampusFillValues(draft));
-      }
     }
     return result;
   }
@@ -7711,6 +7736,9 @@
     if (/setNativeInputValue\(input,\s*prefix\)/.test(source)) {
       throw new Error('教室下拉不支持输入筛选，不应向教室输入框写入前缀');
     }
+    if (/roomOk[\s\S]{0,240}selectMeetingFormOption\(['"]校区['"]/u.test(source)) {
+      throw new Error('教室选中后不应再次选择校区，否则联动表单会清空教室');
+    }
     if (!/data-action="commute-query">查询跑校区<\/button>/.test(source)) {
       throw new Error('跑校区按钮文案应为“查询跑校区”');
     }
@@ -7790,6 +7818,56 @@
   }
 
   function assertSelfTestSmartMeetingTextParsing() {
+    const smallClassroomMeeting = parseSmartMeetingText('金晨宇占\n明天的9：00-10：35\n紫金校区线下 小教室\n金潇洒', {
+      now: new Date(2026, 7, 1, 9, 0)
+    });
+    const smallClassroomExpected = {
+      meetingName: '金晨宇占',
+      date: '2026-08-02',
+      startTime: '09:00',
+      endTime: '10:35',
+      durationMinutes: 95,
+      meetingMode: 'offline',
+      timePeriod: '上午',
+      meetingCampus: '紫金港',
+      teachers: '金潇洒'
+    };
+    if (!smallClassroomMeeting.ok) throw new Error(`小教室原文回归识别失败：${smallClassroomMeeting.message}`);
+    Object.entries(smallClassroomExpected).forEach(([key, value]) => {
+      const actual = key === 'teachers' ? smallClassroomMeeting.teachers.join(',') : smallClassroomMeeting[key];
+      if (actual !== value) throw new Error(`小教室原文回归 ${key} 应为 ${value}，实际：${actual}`);
+    });
+    if (getMeetingDraftClassroomPrefixes(smallClassroomMeeting).join(',') !== 'V') {
+      throw new Error(`小教室原文回归教室应为 V，实际：${getMeetingDraftClassroomPrefixes(smallClassroomMeeting).join(',')}`);
+    }
+    const multilineNaturalMeeting = parseSmartMeetingText('辛苦占空一下雪梨老师明天下午15:30-16:15城西线下的空档\n\n胡琳涵家长沟通\n\n雪梨老师OK的，截图可以私信', {
+      now: new Date(2026, 7, 1, 9, 0)
+    });
+    const multilineNaturalExpected = {
+      meetingName: '胡琳涵家长沟通',
+      date: '2026-08-02',
+      startTime: '15:30',
+      endTime: '16:15',
+      durationMinutes: 45,
+      meetingMode: 'offline',
+      timePeriod: '下午',
+      meetingCampus: '紫金港',
+      teachers: '张佳颖'
+    };
+    if (!multilineNaturalMeeting.ok) throw new Error(`多行自然语言会议原文回归识别失败：${multilineNaturalMeeting.message}`);
+    Object.entries(multilineNaturalExpected).forEach(([key, value]) => {
+      const actual = key === 'teachers' ? multilineNaturalMeeting.teachers.join(',') : multilineNaturalMeeting[key];
+      if (actual !== value) throw new Error(`多行自然语言会议原文回归 ${key} 应为 ${value}，实际：${actual}`);
+    });
+    if (getMeetingDraftClassroomPrefixes(multilineNaturalMeeting).join(',') !== 'M') {
+      throw new Error(`多行自然语言会议原文回归教室应为 M，实际：${getMeetingDraftClassroomPrefixes(multilineNaturalMeeting).join(',')}`);
+    }
+    const multilineOccupyFallback = parseSmartMeetingText('辛苦占空一下雪梨老师明天下午15:30-16:15城西线下的空档\n雪梨老师OK的，截图可以私信', {
+      now: new Date(2026, 7, 1, 9, 0)
+    });
+    if (!multilineOccupyFallback.ok || multilineOccupyFallback.meetingName !== '占空' || multilineOccupyFallback.teachers.join(',') !== '张佳颖') {
+      throw new Error(`没有独立标题时应回退为占空并排除确认备注，实际：${multilineOccupyFallback.meetingName}/${multilineOccupyFallback.teachers.join(',')}`);
+    }
     const communicationMeeting = parseSmartMeetingText('潘沁雯-庄佳佳沟通  9.4上午11:40 15分钟，城建校区 V1002 潘沁雯和庄佳佳', {
       now: new Date(2026, 6, 25, 9, 0)
     });
