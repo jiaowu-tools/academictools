@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.5.1
+// @version      1.5.4
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.5.1';
+  const SCRIPT_VERSION = '1.5.4';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2219,6 +2219,7 @@
   function parsePastedTeacherNames(text) {
     const parts = [];
     stripPastedTeacherListLabel(text)
+      .replace(/[（(][^（）()]{0,40}[）)]/gu, '\n')
       .replace(/[+＋，、；;。.!！?|/\\]+/g, '\n')
       .replace(/\s+/g, '\n')
       .split('\n')
@@ -2734,7 +2735,7 @@
       .filter(Boolean);
     for (let index = lines.length - 1; index >= 0; index -= 1) {
       const line = stripPastedTeacherListLabel(lines[index]);
-      if (!line || isSmartMeetingDetailLine(line)) continue;
+      if (!line || /优先/u.test(line) || isSmartMeetingDetailLine(line)) continue;
       const names = parsePastedTeacherNames(line);
       if (names.length > 1 || (names.length === 1 && isLikelyStandaloneTeacherName(names[0]))) {
         return line;
@@ -2780,6 +2781,7 @@
       /(?:^|[\n\r,，;；。])\s*(?:时间|日期|地点|校区|会议形式|形式|教室|会议名称|名称|主题)\s*[:：]?/u,
       /(?:^|[\n\r,，;；。+])\s*(?:学生待定|学生|学员)\s*[:：]?/u,
       /(?:^|[\n\r,，;；。+])\s*(?:已|已经)?(?:跟|和|同|与).{0,12}(?:沟通|确认|说好|约好)/u,
+      /(?:^|[\n\r])\s*.*(?:截图|图片).{0,12}(?:私信|发我|发你|另发|单独发)/u,
       /(?:^|[\n\r,，;；。])\s*(?:上午|下午|晚上|晚间|中午|早上)?(?:\d{1,2}|[零〇一二两三四五六七八九十两]{1,3})[:：点时](?:[0-5]?\d|[零〇一二两三四五六七八九十两]{1,3}|半)?(?:分)?/u,
       /(?:^|[\n\r,，;；。])\s*(?:城西|紫金港?|钱江|城建|下沙|小和山|永康|金华)?(?:线下|线上)/u,
       /(?:^|[\n\r,，;；。])\s*(?:城西|紫金港?|钱江|城建|下沙|小和山|永康|金华)(?:校区|大厦)?(?:哈|呀|噢|哦|~|～)?/u,
@@ -2863,6 +2865,8 @@
   function parseSmartMeetingName(rawText, compactText) {
     const explicitName = parseSmartMeetingExplicitName(rawText) || parseSmartMeetingExplicitName(compactText);
     if (explicitName) return explicitName;
+    const intentName = parseSmartMeetingIntentName(rawText) || parseSmartMeetingIntentName(compactText);
+    if (intentName) return intentName;
     const standaloneName = parseSmartMeetingStandaloneName(rawText);
     if (standaloneName) return standaloneName;
     const occupyName = parseSmartMeetingOccupyName(rawText) || parseSmartMeetingOccupyName(compactText);
@@ -2878,6 +2882,14 @@
     const afterIntro = trimSmartMeetingNameIntro(text);
     const beforeDetails = cutSmartMeetingNameBeforeDetails(afterIntro);
     return cleanSmartMeetingName(beforeDetails);
+  }
+
+  function parseSmartMeetingIntentName(text) {
+    const source = String(text || '').trim();
+    const match = source.match(/(?:^|[\n\r。；;])\s*(?:(?:辛苦|麻烦|请|帮我|给我|老师)[，,]?\s*)*(?:排|安排)\s*(?:一下|一个|一次|个|场)?\s*([^,，;；。:\n\r]{1,40}?)(?:的)?(家长会|沟通会|培训会|分享会|复盘会|讨论会|会议|会)\s*[:：]?/u);
+    if (!match) return '';
+    const topic = String(match[1] || '').trim().replace(/的$/u, '');
+    return topic ? cleanSmartMeetingName(`${topic}${match[2]}`) : '';
   }
 
   function parseSmartMeetingStandaloneName(text) {
@@ -3052,6 +3064,7 @@
       .replace(/[-—–]+\s*(?:在)?(?:城西|紫金港?|钱江|城建|下沙|小和山|永康|金华)?(?:线下|线上)[\s\S]*$/u, '')
       .replace(/(?:,?)(?:在)?(?:城西|紫金港?|钱江|城建|下沙|小和山|永康|金华)?(?:线下|线上)$/u, '')
       .replace(/([】\]])\s*(?:\[[^\]\n\r]{1,8}\]\s*)+$/u, '$1')
+      .replace(/的(会议|会)\s*[:：]?$/u, '$1')
       .trim()
       .replace(/^[,，;；。]+|[,，;；。]+$/g, '');
     if (/^(?:帮我|请|麻烦|辛苦)?占空$/u.test(cleaned)) return '占空';
@@ -7710,6 +7723,10 @@
       {
         name: '会议新增页：整句识别会议草稿',
         run: assertSelfTestSmartMeetingTextParsing
+      },
+      {
+        name: '会议新增页：名称和参会人分区解析',
+        run: assertSelfTestSmartMeetingNameAttendeeIsolation
       }
     ];
 
@@ -7814,6 +7831,44 @@
     }
     if (scoreMeetingOptionText('周五', targets) <= 0 || scoreMeetingOptionText('周五周六', targets) > 0) {
       throw new Error('固定星期选项评分应只接受精确星期文本');
+    }
+  }
+
+  function assertSelfTestSmartMeetingNameAttendeeIsolation() {
+    const marketDepartmentRaw = '安排一个市场部的会议：\n参会人：张宁 雪梨 （优先两位老师）+张泽凡 沈莺 张子月 童娜 何滢 汪元元';
+    const marketDepartmentName = parseSmartMeetingName(marketDepartmentRaw, marketDepartmentRaw.replace(/\s+/gu, ''));
+    const marketDepartmentTeachers = parseSmartMeetingTeachers(marketDepartmentRaw, marketDepartmentRaw.replace(/\s+/gu, ''));
+    if (marketDepartmentName !== '市场部会议') {
+      throw new Error(`市场部会议名称回归应为市场部会议，实际：${marketDepartmentName}`);
+    }
+    if (marketDepartmentTeachers.join(',') !== '张宁,张佳颖,张泽凡,沈莺,张子月,童娜,何滢,汪元元') {
+      throw new Error(`市场部参会人回归错误，实际：${marketDepartmentTeachers.join(',')}`);
+    }
+    const marketDepartmentMeeting = parseSmartMeetingText('安排一个市场部的会议：\n7.9上午10:00\n参会人：张宁 雪梨 （优先两位老师）+张泽凡 沈莺 张子月 童娜 何滢 汪元元', {
+      now: new Date(2026, 0, 1, 9, 0)
+    });
+    if (!marketDepartmentMeeting.ok
+      || marketDepartmentMeeting.meetingName !== '市场部会议'
+      || marketDepartmentMeeting.date !== '2026-07-09'
+      || marketDepartmentMeeting.startTime !== '10:00'
+      || marketDepartmentMeeting.endTime !== '10:45'
+      || marketDepartmentMeeting.teachers.join(',') !== '张宁,张佳颖,张泽凡,沈莺,张子月,童娜,何滢,汪元元') {
+      throw new Error(`市场部完整会议回归错误：${JSON.stringify(marketDepartmentMeeting)}`);
+    }
+    const noisyMarketMeeting = parseSmartMeetingText('麻烦安排一个市场部的会议，张宁和雪梨优先\n7.9上午10:00\n参会人：张宁 雪梨（优先两位老师）+张泽凡 沈莺 张子月 童娜 何滢 汪元元\n排好以后截图私信我', {
+      now: new Date(2026, 0, 1, 9, 0)
+    });
+    if (!noisyMarketMeeting.ok
+      || noisyMarketMeeting.meetingName !== '市场部会议'
+      || noisyMarketMeeting.date !== '2026-07-09'
+      || noisyMarketMeeting.startTime !== '10:00'
+      || noisyMarketMeeting.endTime !== '10:45'
+      || noisyMarketMeeting.teachers.join(',') !== '张宁,张佳颖,张泽凡,沈莺,张子月,童娜,何滢,汪元元') {
+      throw new Error(`市场部噪声文本分区回归错误：${JSON.stringify(noisyMarketMeeting)}`);
+    }
+    const unlabeledPriority = parseSmartMeetingTeachers('麻烦安排市场部会议，张宁和雪梨优先', '麻烦安排市场部会议，张宁和雪梨优先');
+    if (unlabeledPriority.length) {
+      throw new Error(`无参会人标签时不应从优先备注补人，实际：${unlabeledPriority.join(',')}`);
     }
   }
 
