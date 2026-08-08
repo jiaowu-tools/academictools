@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.5.5
+// @version      1.5.8
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.5.5';
+  const SCRIPT_VERSION = '1.5.8';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2395,13 +2395,18 @@
     if (weekday == null) return null;
     const months = parseSmartRecurringMonths(source, now);
     if (!months.length) return null;
+    const explicitDateRange = parseSmartMeetingDateRange(source, now);
+    const rangeStart = explicitDateRange ? new Date(`${explicitDateRange.startDate}T00:00:00`) : null;
+    const rangeEnd = explicitDateRange ? new Date(`${explicitDateRange.endDate}T23:59:59`) : null;
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const includeToday = shouldRecurringMeetingIncludeToday(source);
     const dates = [];
     months.forEach(({ year, month }) => {
       const date = new Date(year, month - 1, 1);
       while (date.getMonth() === month - 1) {
-        if (date.getDay() === weekday && isRecurringMeetingDateInRange(date, today, includeToday)) {
+        if (date.getDay() === weekday
+          && isRecurringMeetingDateInRange(date, today, includeToday)
+          && (!rangeStart || (date >= rangeStart && date <= rangeEnd))) {
           dates.push(formatDateInput(date));
         }
         date.setDate(date.getDate() + 1);
@@ -2421,7 +2426,7 @@
   }
 
   function parseSmartRecurringWeekday(text) {
-    const match = String(text || '').match(/每(?:个)?(?:周|星期|礼拜)([一二三四五六日天1-7])/u);
+    const match = String(text || '').match(/(?:每(?:个)?(?:周|星期|礼拜)|(?:周|星期|礼拜))([一二三四五六日天1-7])/u);
     if (!match) return null;
     const map = { 日: 0, 天: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 0 };
     return map[match[1]];
@@ -2439,6 +2444,20 @@
 
   function parseSmartRecurringMonths(text, now = new Date()) {
     const source = String(text || '');
+    const explicitDateRange = parseSmartMeetingDateRange(source, now);
+    if (explicitDateRange) {
+      const start = parseIsoDateParts(explicitDateRange.startDate);
+      const end = parseIsoDateParts(explicitDateRange.endDate);
+      return expandRecurringMonths(start.year, start.month, end.year, end.month);
+    }
+    const separatedRangeMatch = source.match(/(?:从|自)?(?:(\d{4})年)?(\d{1,2})月(?:开始|起)[,，]?(?:(\d{4})年)?(\d{1,2})月(?:结束|截止|为止)(?:的)?/u);
+    if (separatedRangeMatch) {
+      const startYear = separatedRangeMatch[1] ? Number(separatedRangeMatch[1]) : now.getFullYear();
+      const startMonth = Number(separatedRangeMatch[2]);
+      const endYear = separatedRangeMatch[3] ? Number(separatedRangeMatch[3]) : inferRecurringEndYear(startYear, startMonth, Number(separatedRangeMatch[4]));
+      const endMonth = Number(separatedRangeMatch[4]);
+      return expandRecurringMonths(startYear, startMonth, endYear, endMonth);
+    }
     const naturalRangeMatch = source.match(/(?:(\d{4})年)?(\d{1,2})月(?:开始|起)?(?:到|至)(?:(\d{4})年)?(\d{1,2})月底?(?:结束|为止)?/u);
     if (naturalRangeMatch) {
       const startYear = naturalRangeMatch[1] ? Number(naturalRangeMatch[1]) : now.getFullYear();
@@ -2522,7 +2541,7 @@
 
   function parseSmartMeetingDateRange(text, now = new Date()) {
     const source = String(text || '');
-    const pattern = /(?:(\d{4})年)?(\d{1,2})(?:月|[\/.-])(\d{1,2})\s*(?:至|到|-|~|～)\s*(?:(\d{4})年)?(\d{1,2})(?:月|[\/.-])(\d{1,2})/gu;
+    const pattern = /(?:(\d{4})年)?(\d{1,2})(?:月|[\/.-])(\d{1,2})(?:日|号)?\s*(?:至|到|-|~|～)\s*(?:(\d{4})年)?(\d{1,2})(?:月|[\/.-])(\d{1,2})(?:日|号)?/gu;
     let match;
     while ((match = pattern.exec(source))) {
       const startYear = match[1] ? Number(match[1]) : now.getFullYear();
@@ -2604,7 +2623,7 @@
 
   function findSmartMeetingClockMatches(text) {
     const source = String(text || '');
-    const pattern = /(^|每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7]|[^\d零〇一二两三四五六七八九十])((?:[01]?\d|2[0-3]|[零〇一二两三四五六七八九十两]{1,3}))\s*([:：点时])\s*([0-5]?\d|[零〇一二两三四五六七八九十两]{1,3})?\s*(半|分)?(?!间)/gu;
+    const pattern = /(^|每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7]|(?:周|星期|礼拜)[一二三四五六日天1-7]|[^\d零〇一二两三四五六七八九十])((?:[01]?\d|2[0-3]|[零〇一二两三四五六七八九十两]{1,3}))\s*([:：点时])\s*([0-5]?\d|[零〇一二两三四五六七八九十两]{1,3})?\s*(半|分)?(?!间)/gu;
     const matches = [];
     let match;
     while ((match = pattern.exec(source))) {
@@ -2890,6 +2909,7 @@
     if (namedAfterTime) return namedAfterTime;
     const text = String(rawText || compactText || '').trim();
     if (!text) return '';
+    if (/^(?:从|自)?(?:\d{4}年)?\d{1,2}月(?:开始|起)[,，]?(?:\d{4}年)?\d{1,2}月(?:结束|截止|为止)(?:的)?每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7](?:上午|下午|晚上|晚间|中午|早上)?\d{1,2}\s*[:：点时]\s*[0-5]?\d$/u.test(text.replace(/\s+/g, ''))) return '';
     const afterIntro = trimSmartMeetingNameIntro(text);
     const beforeDetails = cutSmartMeetingNameBeforeDetails(afterIntro);
     return cleanSmartMeetingName(beforeDetails);
@@ -2909,6 +2929,11 @@
       .map((line) => line.trim())
       .filter(Boolean);
     for (const line of lines) {
+      const longMeetingName = line.match(/^长时间的会议\s*[，,]\s*(.+)$/u);
+      if (longMeetingName && /(?:会|会议)$/u.test(longMeetingName[1])) {
+        const name = cleanSmartMeetingName(longMeetingName[1]);
+        if (name) return name;
+      }
       if (isSmartMeetingConfirmationNoteLine(line) || isSmartMeetingDetailLine(line)) continue;
       if (/(?:老师|参会|参与|参加|出席|人员)/u.test(line)) continue;
       if (/[+＋，、；;]/u.test(line)) continue;
@@ -8501,6 +8526,56 @@
     }
     if (recurringWeeklyMeeting.teachers.join(',') !== '张佳颖,泽凡,沈莺,童娜,子月,何滢,汪元元') {
       throw new Error(`出席人应识别参会名单且截断校区尾巴，实际：${recurringWeeklyMeeting.teachers.join(',')}`);
+    }
+    const longMarketPlatformMeeting = parseSmartMeetingText('长时间的会议，市场中台会\n9月1号-1月19号\n每周二14:05-14:50\n参会人：雪梨、张宁、泽凡、沈莺、何滢、子月、童娜、汪元元', {
+      now: new Date(2026, 7, 8, 9, 0)
+    });
+    if (!longMarketPlatformMeeting.ok) throw new Error(`长时间市场中台会格式识别失败：${longMarketPlatformMeeting.message}`);
+    if (longMarketPlatformMeeting.meetingName !== '市场中台会') {
+      throw new Error(`长时间市场中台会名称应为市场中台会，实际：${longMarketPlatformMeeting.meetingName}`);
+    }
+    if (longMarketPlatformMeeting.date !== '2026-09-01' || longMarketPlatformMeeting.endDate !== '2027-01-19') {
+      throw new Error(`长时间市场中台会日期范围应为 2026-09-01 至 2027-01-19，实际：${longMarketPlatformMeeting.date} 至 ${longMarketPlatformMeeting.endDate}`);
+    }
+    if (longMarketPlatformMeeting.weekday !== '周二' || longMarketPlatformMeeting.startTime !== '14:05' || longMarketPlatformMeeting.endTime !== '14:50' || longMarketPlatformMeeting.durationMinutes !== 45) {
+      throw new Error(`长时间市场中台会周期时间应为每周二 14:05-14:50/45分钟，实际：${longMarketPlatformMeeting.weekday}/${longMarketPlatformMeeting.startTime}-${longMarketPlatformMeeting.endTime}/${longMarketPlatformMeeting.durationMinutes}`);
+    }
+    if (longMarketPlatformMeeting.teachers.join(',') !== '张佳颖,张宁,泽凡,沈莺,何滢,子月,童娜,汪元元') {
+      throw new Error(`长时间市场中台会参会人识别错误，实际：${longMarketPlatformMeeting.teachers.join(',')}`);
+    }
+    const shortMarketPlatformMeeting = parseSmartMeetingText('市场中台会\n9月1号-1月19号\n周五10:40-11:25\n参会人：雪梨、张宁、泽凡、沈莺、何滢、子月、童娜、汪元元', {
+      now: new Date(2026, 7, 8, 9, 0)
+    });
+    if (!shortMarketPlatformMeeting.ok || shortMarketPlatformMeeting.sourceKind !== 'smart-recurring-meeting-text') {
+      throw new Error(`简短市场中台会格式应识别为固定周期，实际：${shortMarketPlatformMeeting.sourceKind || shortMarketPlatformMeeting.message}`);
+    }
+    if (shortMarketPlatformMeeting.meetingName !== '市场中台会' || shortMarketPlatformMeeting.date !== '2026-09-04' || shortMarketPlatformMeeting.endDate !== '2027-01-15') {
+      throw new Error(`简短市场中台会名称/日期范围错误，实际：${shortMarketPlatformMeeting.meetingName}/${shortMarketPlatformMeeting.date} 至 ${shortMarketPlatformMeeting.endDate}`);
+    }
+    if (shortMarketPlatformMeeting.weekday !== '周五' || shortMarketPlatformMeeting.startTime !== '10:40' || shortMarketPlatformMeeting.endTime !== '11:25' || shortMarketPlatformMeeting.durationMinutes !== 45) {
+      throw new Error(`简短市场中台会周期时间错误，实际：${shortMarketPlatformMeeting.weekday}/${shortMarketPlatformMeeting.startTime}-${shortMarketPlatformMeeting.endTime}/${shortMarketPlatformMeeting.durationMinutes}`);
+    }
+    if (shortMarketPlatformMeeting.teachers.join(',') !== '张佳颖,张宁,泽凡,沈莺,何滢,子月,童娜,汪元元') {
+      throw new Error(`简短市场中台会参会人识别错误，实际：${shortMarketPlatformMeeting.teachers.join(',')}`);
+    }
+    const separatedMonthRangeMeeting = parseSmartMeetingText('从9月开始，2月结束的每周二10：40', {
+      now: new Date(2026, 7, 8, 9, 0)
+    });
+    if (!separatedMonthRangeMeeting.ok || separatedMonthRangeMeeting.sourceKind !== 'smart-recurring-meeting-text') {
+      throw new Error(`分隔式月份范围应识别为固定周期，实际：${separatedMonthRangeMeeting.sourceKind || separatedMonthRangeMeeting.message}`);
+    }
+    if (separatedMonthRangeMeeting.date !== '2026-09-01' || separatedMonthRangeMeeting.endDate !== '2027-02-23' || separatedMonthRangeMeeting.weekday !== '周二') {
+      throw new Error(`分隔式月份范围应覆盖 2026-09-01 至 2027-02-23 的周二，实际：${separatedMonthRangeMeeting.date} 至 ${separatedMonthRangeMeeting.endDate}/${separatedMonthRangeMeeting.weekday}`);
+    }
+    if (separatedMonthRangeMeeting.startTime !== '10:40' || separatedMonthRangeMeeting.endTime !== '11:25' || separatedMonthRangeMeeting.durationMinutes !== 45) {
+      throw new Error(`分隔式月份范围时间应为 10:40-11:25/45分钟，实际：${separatedMonthRangeMeeting.startTime}-${separatedMonthRangeMeeting.endTime}/${separatedMonthRangeMeeting.durationMinutes}`);
+    }
+    if (separatedMonthRangeMeeting.meetingName !== '') {
+      throw new Error(`仅含排期信息时会议名称应留空，实际：${separatedMonthRangeMeeting.meetingName}`);
+    }
+    const mixedDateRange = parseSmartMeetingDateRange('9.1-12月5', new Date(2026, 7, 8, 9, 0));
+    if (!mixedDateRange || mixedDateRange.startDate !== '2026-09-01' || mixedDateRange.endDate !== '2026-12-05') {
+      throw new Error(`混合日期格式 9.1-12月5 应识别为 2026-09-01 至 2026-12-05，实际：${mixedDateRange ? `${mixedDateRange.startDate} 至 ${mixedDateRange.endDate}` : '未识别'}`);
     }
     const recurringZhangNingName = parseSmartMeetingText('麻烦排【市场中台周会】7月每个周五上午10:40-11:30 出席人：张宁、雪梨。城建校区哈～', {
       now: new Date(2026, 6, 8, 9, 0)
