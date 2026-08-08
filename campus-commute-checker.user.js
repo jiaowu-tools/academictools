@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.5.8
+// @version      1.5.10
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.5.8';
+  const SCRIPT_VERSION = '1.5.10';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2183,7 +2183,9 @@
 
     helper.querySelector('[data-smart-meeting-fill]')?.addEventListener('click', async () => {
       const text = helper.querySelector('#ccheck-smart-meeting-text')?.value || '';
-      const draft = parseSmartMeetingText(text);
+      const draft = parseSmartMeetingText(text, {
+        meetingFormKind: getMeetingFormKindFromPath()
+      });
       if (!draft.ok) {
         setMeetingAttendeeHelperResult(draft.message);
         return;
@@ -2275,9 +2277,15 @@
     const normalizedText = normalizeSmartMeetingText(raw);
     const compactRaw = compactSmartMeetingText(raw);
     const now = options.now || new Date();
-    const recurringDraft = parseSmartRecurringMeetingText(raw, normalizedText, compactRaw, now);
+    const meetingFormKind = options.meetingFormKind || '';
+    const recurringDraft = meetingFormKind === 'single'
+      ? null
+      : parseSmartRecurringMeetingText(raw, normalizedText, compactRaw, now);
     if (recurringDraft) return recurringDraft;
-    const dateRange = parseSmartMeetingDateRange(raw, now);
+    const dateRange = meetingFormKind === 'single' ? null : parseSmartMeetingDateRange(raw, now);
+    if (meetingFormKind === 'single' && (/每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7]/u.test(normalizedText) || parseSmartMeetingDateRange(raw, now))) {
+      return { ok: false, message: '当前是“新增入口”单次会议，请打开“新增系统预排会议”后再粘贴长期日期或周期安排。' };
+    }
     const date = dateRange?.startDate || parseSmartMeetingDate(raw, now);
     const startMinutes = parseSmartMeetingStartMinutes(raw);
     if (!date) return { ok: false, message: '没有识别到会议日期，例如 7.9 或 7月9日。' };
@@ -3075,6 +3083,7 @@
       /(?:(?:\d{4})年)?\d{1,2}月(?:开始|起)?(?:到|至)(?:(?:\d{4})年)?\d{1,2}月底?(?:结束|为止)?[，,、\s]*(?:的)?每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7]/u,
       /(?:在)?(?:(?:\d{4})年)?\d{1,2}月(?:的)?每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7]/u,
       /(?:^|[,，;；])\s*每(?:个)?(?:周|星期|礼拜)[一二三四五六日天1-7]/u,
+      new RegExp(`${getSmartMeetingDatePatternSource()}\\s*(?:周|星期|礼拜)[一二三四五六日天1-7]\\s*(?:上午|下午|晚上|晚间|中午|早上)?\\s*${getSmartMeetingClockPatternSource()}`, 'u'),
       new RegExp(`${getSmartMeetingDatePatternSource()}\\s*(?:的|[,，])?\\s*(?:上午|下午|晚上|晚间|中午|早上)?\\s*${getSmartMeetingClockPatternSource()}`, 'u'),
       /(?:今天|明天|后天|大后天)(?:上午|下午|晚上|晚间|中午|早上)?(?:\d{1,2}|[零〇一二两三四五六七八九十两]{1,3})[:：点时](?:[0-5]?\d|[零〇一二两三四五六七八九十两]{1,3}|半)?(?:分)?/u,
       /(?:^|[,，])(?:上午|下午|晚上|晚间|中午|早上)?(?:\d{1,2}|[零〇一二两三四五六七八九十两]{1,3})[:：点时](?:[0-5]?\d|[零〇一二两三四五六七八九十两]{1,3}|半)?(?:分)?/u,
@@ -3361,6 +3370,13 @@
 
   function isMeetingSubmitPage() {
     return location.pathname.startsWith('/meeting/add') || isMeetingAddPage();
+  }
+
+  function getMeetingFormKindFromPath(pathname = location.pathname) {
+    const path = String(pathname || '');
+    if (path.startsWith('/meeting/addForm')) return 'recurring';
+    if (path.startsWith('/meeting/add')) return 'single';
+    return '';
   }
 
   function readMeetingDraftFromPage() {
@@ -7814,6 +7830,15 @@
     if (url.pathname === '/meeting/addForm') {
       throw new Error('色块图会议草稿不应转到多时间会议页 /meeting/addForm');
     }
+    if (getMeetingFormKindFromPath('/meeting/add') !== 'single') {
+      throw new Error('新增入口 /meeting/add 必须识别为单次会议');
+    }
+    if (getMeetingFormKindFromPath('/meeting/addForm') !== 'recurring') {
+      throw new Error('新增系统预排会议 /meeting/addForm 必须识别为长时间会议');
+    }
+    if (getMeetingFormKindFromPath('/meeting/add?type=recurring') !== 'single') {
+      throw new Error('单次会议入口应按路径识别，不应被查询参数改成长时间会议');
+    }
   }
 
   function assertSelfTestRulesOverview() {
@@ -7909,6 +7934,25 @@
   }
 
   function assertSelfTestSmartMeetingTextParsing() {
+    const singleAcademicResearchMeeting = parseSmartMeetingText('国际学科教研\n9月18周二14:05-14:50（M1004）\n参会人：\n马思雨、胡帅添、姚心雨、戴天成、卢娜、庞锐、沈豪杰、晋梓豪、李佳明、吕安、王璐滢、郑菲、付蕾、唐韵琪', {
+      now: new Date(2026, 7, 8, 9, 0),
+      meetingFormKind: 'single'
+    });
+    if (!singleAcademicResearchMeeting.ok || singleAcademicResearchMeeting.sourceKind !== 'smart-meeting-text') {
+      throw new Error(`国际学科教研应按单次入口识别，实际：${singleAcademicResearchMeeting.sourceKind || singleAcademicResearchMeeting.message}`);
+    }
+    if (singleAcademicResearchMeeting.meetingName !== '国际学科教研') {
+      throw new Error(`国际学科教研名称不应混入日期时间，实际：${singleAcademicResearchMeeting.meetingName}`);
+    }
+    if (singleAcademicResearchMeeting.date !== '2026-09-18' || singleAcademicResearchMeeting.startTime !== '14:05' || singleAcademicResearchMeeting.endTime !== '14:50' || singleAcademicResearchMeeting.durationMinutes !== 45) {
+      throw new Error(`国际学科教研日期时间应为 2026-09-18 14:05-14:50/45分钟，实际：${singleAcademicResearchMeeting.date} ${singleAcademicResearchMeeting.startTime}-${singleAcademicResearchMeeting.endTime}/${singleAcademicResearchMeeting.durationMinutes}`);
+    }
+    if (singleAcademicResearchMeeting.meetingMode !== 'offline' || singleAcademicResearchMeeting.timePeriod !== '下午' || singleAcademicResearchMeeting.meetingCampus !== '' || getMeetingDraftClassroomPrefixes(singleAcademicResearchMeeting).length) {
+      throw new Error(`国际学科教研未写校区时应识别线下/下午并跳过校区教室，实际：${singleAcademicResearchMeeting.meetingMode}/${singleAcademicResearchMeeting.timePeriod}/${singleAcademicResearchMeeting.meetingCampus}/${getMeetingDraftClassroomPrefixes(singleAcademicResearchMeeting).join(',')}`);
+    }
+    if (singleAcademicResearchMeeting.teachers.join(',') !== '马思雨,胡帅添,姚心雨,戴天成,卢娜,庞锐,沈豪杰,晋梓豪,李佳明,吕安,王璐滢,郑菲,付蕾,唐韵琪') {
+      throw new Error(`国际学科教研参会人识别错误，实际：${singleAcademicResearchMeeting.teachers.join(',')}`);
+    }
     const smallClassroomMeeting = parseSmartMeetingText('金晨宇占\n明天的9：00-10：35\n紫金校区线下 小教室\n金潇洒', {
       now: new Date(2026, 7, 1, 9, 0)
     });
@@ -8526,6 +8570,20 @@
     }
     if (recurringWeeklyMeeting.teachers.join(',') !== '张佳颖,泽凡,沈莺,童娜,子月,何滢,汪元元') {
       throw new Error(`出席人应识别参会名单且截断校区尾巴，实际：${recurringWeeklyMeeting.teachers.join(',')}`);
+    }
+    const recurringOnSingleEntry = parseSmartMeetingText('市场中台会\n9月1号-1月19号\n每周二14:05-14:50', {
+      now: new Date(2026, 7, 8, 9, 0),
+      meetingFormKind: 'single'
+    });
+    if (recurringOnSingleEntry.ok || !/新增系统预排会议/u.test(recurringOnSingleEntry.message || '')) {
+      throw new Error(`单次入口不应接收长期会议安排，实际：${recurringOnSingleEntry.ok ? '错误生成草稿' : recurringOnSingleEntry.message}`);
+    }
+    const recurringOnPreplanEntry = parseSmartMeetingText('市场中台会\n9月1号-1月19号\n每周二14:05-14:50', {
+      now: new Date(2026, 7, 8, 9, 0),
+      meetingFormKind: 'recurring'
+    });
+    if (!recurringOnPreplanEntry.ok || recurringOnPreplanEntry.sourceKind !== 'smart-recurring-meeting-text') {
+      throw new Error(`预排入口应接收长期会议安排，实际：${recurringOnPreplanEntry.sourceKind || recurringOnPreplanEntry.message}`);
     }
     const longMarketPlatformMeeting = parseSmartMeetingText('长时间的会议，市场中台会\n9月1号-1月19号\n每周二14:05-14:50\n参会人：雪梨、张宁、泽凡、沈莺、何滢、子月、童娜、汪元元', {
       now: new Date(2026, 7, 8, 9, 0)
