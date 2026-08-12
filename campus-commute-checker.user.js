@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.5.10
+// @version      1.6.1
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.5.10';
+  const SCRIPT_VERSION = '1.6.1';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -2330,7 +2330,8 @@
     meetingName,
     endDate,
     weekday,
-    weekdayValues
+    weekdayValues,
+    weekdays
   }) {
     return {
       source: 'campus-commute-checker',
@@ -2354,7 +2355,8 @@
       teachers,
       meetingName,
       weekday,
-      weekdayValues
+      weekdayValues,
+      weekdays
     };
   }
 
@@ -2379,7 +2381,8 @@
     const meetingClassroomPrefixes = getSmartMeetingClassroomPrefixes(normalizedText, meetingMode, campusInfo);
     const baseMeetingName = parseSmartMeetingName(raw, compactRaw);
     const meetingName = String(baseMeetingName || '').trim();
-    const weekday = parseSmartRecurringWeekday(normalizedText);
+    const weekdays = parseSmartRecurringWeekdays(normalizedText);
+    const weekday = weekdays[0];
     return buildSmartMeetingDraft({
       sourceKind: 'smart-recurring-meeting-text',
       date: dates[0],
@@ -2392,15 +2395,16 @@
       campusInfo,
       meetingClassroomPrefixes,
       meetingName,
-      weekday: formatSmartRecurringWeekday(weekday),
-      weekdayValues: getSmartRecurringWeekdayFillValues(weekday)
+      weekday: weekdays.map(formatSmartRecurringWeekday).join('、'),
+      weekdayValues: weekdays.flatMap(getSmartRecurringWeekdayFillValues),
+      weekdays
     });
   }
 
   function parseSmartRecurringMeetingDates(text, now = new Date()) {
     const source = String(text || '');
-    const weekday = parseSmartRecurringWeekday(source);
-    if (weekday == null) return null;
+    const weekdays = parseSmartRecurringWeekdays(source);
+    if (!weekdays.length) return null;
     const months = parseSmartRecurringMonths(source, now);
     if (!months.length) return null;
     const explicitDateRange = parseSmartMeetingDateRange(source, now);
@@ -2412,7 +2416,7 @@
     months.forEach(({ year, month }) => {
       const date = new Date(year, month - 1, 1);
       while (date.getMonth() === month - 1) {
-        if (date.getDay() === weekday
+        if (weekdays.includes(date.getDay())
           && isRecurringMeetingDateInRange(date, today, includeToday)
           && (!rangeStart || (date >= rangeStart && date <= rangeEnd))) {
           dates.push(formatDateInput(date));
@@ -2434,10 +2438,13 @@
   }
 
   function parseSmartRecurringWeekday(text) {
-    const match = String(text || '').match(/(?:每(?:个)?(?:周|星期|礼拜)|(?:周|星期|礼拜))([一二三四五六日天1-7])/u);
-    if (!match) return null;
+    return parseSmartRecurringWeekdays(text)[0] ?? null;
+  }
+
+  function parseSmartRecurringWeekdays(text) {
+    const matches = String(text || '').matchAll(/(?:每(?:个)?(?:周|星期|礼拜)|(?:周|星期|礼拜))([一二三四五六日天1-7])/gu);
     const map = { 日: 0, 天: 0, 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 0 };
-    return map[match[1]];
+    return Array.from(new Set(Array.from(matches, (match) => map[match[1]]).filter((value) => value != null)));
   }
 
   function formatSmartRecurringWeekday(weekday) {
@@ -2605,7 +2612,7 @@
 
   function parseSmartMeetingDurationMinutes(text) {
     const normalized = stripSmartMeetingClockText(String(text || ''));
-    const lessonMatch = normalized.match(/([0-9一二两三四五六七八九十]{1,3})\s*课时/u);
+    const lessonMatch = normalized.match(/([0-9一二两三四五六七八九十]{1,3})\s*个?\s*课时/u);
     if (lessonMatch) {
       const lessonCount = parseSmartMeetingTimeNumber(lessonMatch[1]);
       if (Number.isFinite(lessonCount) && lessonCount > 0) {
@@ -3580,14 +3587,21 @@
 
   async function selectMeetingWeekdayOption(values) {
     const item = findMeetingFormItem('星期');
-    const targets = normalizeMeetingOptionTargets(values, '星期');
-    if (!item || !targets.length) return false;
-    if (isMeetingFormOptionSelected(item, targets)) return true;
-    if (clickMeetingInlineOption(item, targets)) {
-      await sleep(160);
-      if (isMeetingFormOptionSelected(item, targets)) return true;
+    const groups = Array.from(new Set((Array.isArray(values) ? values : [values])
+      .map((value) => String(value || '').match(/(?:周|星期|礼拜)([一二三四五六日天1-7])/u)?.[1])
+      .filter(Boolean)))
+      .map((day) => normalizeMeetingOptionTargets([`周${day}`, `星期${day}`], '星期'));
+    if (!item || !groups.length) return false;
+    for (const targets of groups) {
+      if (isMeetingFormOptionSelected(item, targets)) continue;
+      if (clickMeetingInlineOption(item, targets)) {
+        await sleep(160);
+        if (isMeetingFormOptionSelected(item, targets)) continue;
+      }
+      const selected = await selectMeetingDropdownOption(item, targets, { allowSearch: false, closeAfterSelect: true });
+      if (!selected) return false;
     }
-    return selectMeetingDropdownOption(item, targets, { allowSearch: false, closeAfterSelect: true });
+    return groups.every((targets) => isMeetingFormOptionSelected(item, targets));
   }
 
   function normalizeMeetingOptionTargets(values, label = '') {
@@ -7893,6 +7907,10 @@
     if (scoreMeetingOptionText('周五', targets) <= 0 || scoreMeetingOptionText('周五周六', targets) > 0) {
       throw new Error('固定星期选项评分应只接受精确星期文本');
     }
+    const multipleValues = getMeetingWeekdayFillValues({ weekday: '周一、周二', weekdayValues: ['周一', '星期一', '周二', '星期二'], weekdays: [1, 2] });
+    if (multipleValues.join(',') !== '周一,星期一,周二,星期二,周一、周二') {
+      throw new Error(`多个固定星期填充候选错误，实际：${multipleValues.join(',')}`);
+    }
   }
 
   function assertSelfTestSmartMeetingNameAttendeeIsolation() {
@@ -8222,6 +8240,37 @@
     });
     if (!twoLessonMeeting.ok || twoLessonMeeting.startTime !== '09:00' || twoLessonMeeting.endTime !== '10:35' || twoLessonMeeting.durationMinutes !== 95) {
       throw new Error(`两课时应按 95 分钟计算，实际：${twoLessonMeeting.startTime}-${twoLessonMeeting.endTime}/${twoLessonMeeting.durationMinutes}`);
+    }
+    const singleTwoLessonMeeting = parseSmartMeetingText('单次教研\n9.18 14:05，两个课时', {
+      now: new Date(2026, 7, 13, 9, 0),
+      meetingFormKind: 'single'
+    });
+    if (!singleTwoLessonMeeting.ok || singleTwoLessonMeeting.date !== '2026-09-18' || singleTwoLessonMeeting.startTime !== '14:05' || singleTwoLessonMeeting.endTime !== '15:40' || singleTwoLessonMeeting.durationMinutes !== 95 || singleTwoLessonMeeting.meetingName !== '单次教研') {
+      throw new Error(`单次入口“两个课时”应按 95 分钟计算，实际：${JSON.stringify(singleTwoLessonMeeting)}`);
+    }
+    const recurringTwoLessonMeeting = parseSmartMeetingText('长期教研\n9月到12月每周二14:05，2个课时', {
+      now: new Date(2026, 7, 13, 9, 0),
+      meetingFormKind: 'recurring'
+    });
+    if (!recurringTwoLessonMeeting.ok || recurringTwoLessonMeeting.date !== '2026-09-01' || recurringTwoLessonMeeting.endDate !== '2026-12-29' || recurringTwoLessonMeeting.weekday !== '周二' || recurringTwoLessonMeeting.startTime !== '14:05' || recurringTwoLessonMeeting.endTime !== '15:40' || recurringTwoLessonMeeting.durationMinutes !== 95 || recurringTwoLessonMeeting.meetingName !== '长期教研') {
+      throw new Error(`长期入口“2个课时”应按 95 分钟计算，实际：${JSON.stringify(recurringTwoLessonMeeting)}`);
+    }
+    const multipleWeekdayMeeting = parseSmartMeetingText('长期教研\n9月到12月每周一周二10:40，两个课时\n参会人：雪梨、张宁', {
+      now: new Date(2026, 7, 13, 9, 0),
+      meetingFormKind: 'recurring'
+    });
+    if (!multipleWeekdayMeeting.ok || multipleWeekdayMeeting.date !== '2026-09-01' || multipleWeekdayMeeting.endDate !== '2026-12-29' || multipleWeekdayMeeting.weekday !== '周一、周二' || (multipleWeekdayMeeting.weekdays || []).join(',') !== '1,2') {
+      throw new Error(`长期入口多个星期应覆盖周一和周二，实际：${JSON.stringify(multipleWeekdayMeeting)}`);
+    }
+    if ((multipleWeekdayMeeting.weekdayValues || []).join(',') !== '周一,星期一,周二,星期二' || multipleWeekdayMeeting.startTime !== '10:40' || multipleWeekdayMeeting.endTime !== '12:15' || multipleWeekdayMeeting.durationMinutes !== 95 || multipleWeekdayMeeting.meetingName !== '长期教研' || multipleWeekdayMeeting.teachers.join(',') !== '张佳颖,张宁') {
+      throw new Error(`长期入口多个星期全字段回归错误，实际：${JSON.stringify(multipleWeekdayMeeting)}`);
+    }
+    const explicitRangeBeatsLessonCount = parseSmartMeetingText('单次教研\n9.18 14:05-14:50，两个课时', {
+      now: new Date(2026, 7, 13, 9, 0),
+      meetingFormKind: 'single'
+    });
+    if (!explicitRangeBeatsLessonCount.ok || explicitRangeBeatsLessonCount.endTime !== '14:50' || explicitRangeBeatsLessonCount.durationMinutes !== 45) {
+      throw new Error(`明确结束时间应优先于课时数量，实际：${explicitRangeBeatsLessonCount.startTime}-${explicitRangeBeatsLessonCount.endTime}/${explicitRangeBeatsLessonCount.durationMinutes}`);
     }
     const draft = parseSmartMeetingText('7.9晚上排一个【沈悦颜】家长会，18：30城西线下，参会人：沈豪杰+毛婧', {
       now: new Date(2026, 0, 1)
