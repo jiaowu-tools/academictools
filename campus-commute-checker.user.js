@@ -1531,7 +1531,7 @@
         </div>
         <div class="ccheck-view" id="ccheck-view-campus-teachers" hidden>
           <div class="ccheck-campus-teacher-query">
-            <div class="ccheck-section-title">当天校区老师</div>
+            <div class="ccheck-section-title">当日老师校区查询</div>
             <div class="ccheck-campus-teacher-tools">
               <label class="ccheck-field">日期 <input id="ccheck-campus-teacher-date" type="date"></label>
               <label class="ccheck-field">校区 <select id="ccheck-campus-teacher-campus">${renderCommuteCampusOptions()}</select></label>
