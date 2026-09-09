@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.6.2
+// @version      1.6.3
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.6.2';
+  const SCRIPT_VERSION = '1.6.3';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -1486,6 +1486,7 @@
       <div class="ccheck-body">
         <div class="ccheck-tabs">
           <button class="ccheck-tab ccheck-tab-active" type="button" data-view="audit">核对课表</button>
+          <button class="ccheck-tab" type="button" data-view="campus-teachers">当日校区查询</button>
           <button class="ccheck-tab" type="button" data-view="meeting">排会议</button>
           <button class="ccheck-tab" type="button" data-view="supervisor">督导排班</button>
         </div>
@@ -1524,6 +1525,11 @@
               <div class="ccheck-empty">选择教师课表日期后，可直接查询跑校区。</div>
             </div>
           </div>
+          <div class="ccheck-list" id="ccheck-list">
+            <div class="ccheck-empty">还没有扫描结果。</div>
+          </div>
+        </div>
+        <div class="ccheck-view" id="ccheck-view-campus-teachers" hidden>
           <div class="ccheck-campus-teacher-query">
             <div class="ccheck-section-title">当天校区老师</div>
             <div class="ccheck-campus-teacher-tools">
@@ -1537,9 +1543,6 @@
             <div class="ccheck-campus-teacher-results" id="ccheck-campus-teacher-results">
               <div class="ccheck-empty">先扫描课表，再选择日期和校区。</div>
             </div>
-          </div>
-          <div class="ccheck-list" id="ccheck-list">
-            <div class="ccheck-empty">还没有扫描结果。</div>
           </div>
         </div>
         <div class="ccheck-view" id="ccheck-view-meeting" hidden>
@@ -10720,25 +10723,30 @@
   }
 
   function switchView(view) {
-    const nextView = view === 'meeting' || view === 'supervisor' ? view : 'audit';
+    const nextView = view === 'meeting' || view === 'supervisor' || view === 'campus-teachers' ? view : 'audit';
     state.activeView = nextView;
     document.querySelectorAll('#ccheck-panel [data-view]').forEach((button) => {
       button.classList.toggle('ccheck-tab-active', button.dataset.view === nextView);
     });
     const auditView = document.getElementById('ccheck-view-audit');
+    const campusTeachersView = document.getElementById('ccheck-view-campus-teachers');
     const meetingView = document.getElementById('ccheck-view-meeting');
     const supervisorView = document.getElementById('ccheck-view-supervisor');
     const rulesView = document.getElementById('ccheck-view-rules');
     if (auditView) auditView.hidden = nextView !== 'audit';
+    if (campusTeachersView) campusTeachersView.hidden = nextView !== 'campus-teachers';
     if (meetingView) meetingView.hidden = nextView !== 'meeting';
     if (supervisorView) supervisorView.hidden = nextView !== 'supervisor';
     if (rulesView) rulesView.hidden = nextView !== 'rules';
     if (nextView === 'meeting' && state.lastEvents.length) refreshMeetingPlanner(state.lastEvents);
+    if (nextView === 'campus-teachers') refreshCampusTeacherDate(state.lastEvents);
     if (nextView === 'supervisor') {
       renderSupervisorPlanner();
       setStatus('已切换到督导排班表导入。上传石墨 XLS/XLSX 后，回到排会议页默认包含督导。');
     } else {
-      setStatus(nextView === 'meeting' ? '已切换到排会议。先扫描课表，再选择老师查找共同空档。' : '已切换到核对课表。');
+      setStatus(nextView === 'meeting'
+        ? '已切换到排会议。先扫描课表，再选择老师查找共同空档。'
+        : (nextView === 'campus-teachers' ? '已切换到校区老师。先扫描课表，再按日期和校区查询。' : '已切换到核对课表。'));
     }
   }
 
