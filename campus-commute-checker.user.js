@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.6.3
+// @version      1.6.4
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.6.3';
+  const SCRIPT_VERSION = '1.6.4';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -580,6 +580,27 @@
       .ccheck-campus-teacher-tools select {
         width: 100%;
         min-width: 0;
+      }
+
+      .ccheck-campus-teacher-dates {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        max-height: 76px;
+        overflow: auto;
+      }
+
+      .ccheck-campus-teacher-date-option {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 7px;
+        border: 1px solid #bbf7d0;
+        border-radius: 999px;
+        background: #fff;
+        color: #166534;
+        cursor: pointer;
+        font-size: 12px;
       }
 
       .ccheck-campus-teacher-results {
@@ -1533,7 +1554,7 @@
           <div class="ccheck-campus-teacher-query">
             <div class="ccheck-section-title">当日老师校区查询</div>
             <div class="ccheck-campus-teacher-tools">
-              <label class="ccheck-field">日期 <input id="ccheck-campus-teacher-date" type="date"></label>
+              <div class="ccheck-field" style="grid-column: 1 / -1; align-items: flex-start;"><span>日期（可多选）</span><div class="ccheck-campus-teacher-dates" id="ccheck-campus-teacher-dates"></div></div>
               <label class="ccheck-field">校区 <select id="ccheck-campus-teacher-campus">${renderCommuteCampusOptions()}</select></label>
             </div>
             <div class="ccheck-commute-actions">
@@ -5181,11 +5202,28 @@
   }
 
   function refreshCampusTeacherDate(events = state.lastEvents) {
-    const input = document.getElementById('ccheck-campus-teacher-date');
-    if (!input) return '';
+    const container = document.getElementById('ccheck-campus-teacher-dates');
+    if (!container) return [];
     const dates = resolveCommuteDateOptions(events, getTeacherScheduleDateRange(), getHeaderColumns().map((column) => column.date));
-    if (dates.length && (!isIsoDate(input.value) || !dates.includes(input.value))) input.value = dates[0];
-    return input.value || dates[0] || '';
+    const previous = new Set(String(container.dataset.selectedDates || '').split(',').filter((date) => dates.includes(date)));
+    const selected = previous.size ? previous : new Set(dates.slice(0, 1));
+    container.dataset.selectedDates = Array.from(selected).join(',');
+    container.innerHTML = dates.length
+      ? dates.map((date) => `<label class="ccheck-campus-teacher-date-option"><input type="checkbox" data-campus-teacher-date="${escapeHtml(date)}" ${selected.has(date) ? 'checked' : ''}>${escapeHtml(formatShortDate(date))}</label>`).join('')
+      : '<span class="ccheck-muted">先在教师课表选择日期</span>';
+    container.querySelectorAll('[data-campus-teacher-date]').forEach((input) => {
+      input.addEventListener('change', () => {
+        const checked = Array.from(container.querySelectorAll('[data-campus-teacher-date]:checked')).map((item) => item.dataset.campusTeacherDate);
+        container.dataset.selectedDates = checked.join(',');
+      });
+    });
+    return Array.from(selected);
+  }
+
+  function getSelectedCampusTeacherDates() {
+    const container = document.getElementById('ccheck-campus-teacher-dates');
+    if (!container) return [];
+    return Array.from(container.querySelectorAll('[data-campus-teacher-date]:checked')).map((input) => input.dataset.campusTeacherDate).filter(isIsoDate);
   }
 
   function findCampusTeachers(events, query) {
@@ -5213,20 +5251,29 @@
 
   async function queryCampusTeachers() {
     const container = document.getElementById('ccheck-campus-teacher-results');
-    const date = document.getElementById('ccheck-campus-teacher-date')?.value || refreshCampusTeacherDate();
+    const dates = getSelectedCampusTeacherDates();
     const campus = document.getElementById('ccheck-campus-teacher-campus')?.value || '';
     if (!container) return;
-    if (!isIsoDate(date) || !campus) {
-      container.innerHTML = '<div class="ccheck-empty">请选择日期和校区。</div>';
+    if (!dates.length || !campus) {
+      container.innerHTML = '<div class="ccheck-empty">请至少选择一天日期和一个校区。</div>';
       return;
     }
 
     const selectedRange = getTeacherScheduleDateRange();
     const loadedDates = new Set((state.lastEvents || []).map((event) => event?.date).filter(Boolean));
-    if (!state.lastEvents.length || !loadedDates.has(date)
-      || (selectedRange && !isSameTeacherScheduleDateRange(selectedRange, state.lastScanDateRange))) {
+    const queryRange = { startDate: dates[0], endDate: dates[dates.length - 1] };
+    if (selectedRange && (selectedRange.startDate !== queryRange.startDate || selectedRange.endDate !== queryRange.endDate)) {
+      await setScheduleDateFilters(queryRange);
+    }
+    if (selectedRange || !state.lastEvents.length || dates.some((date) => !loadedDates.has(date))) {
       container.innerHTML = '<div class="ccheck-empty">正在按教师课表当前日期刷新数据，请稍候。</div>';
-      if (selectedRange) await refreshTeacherScheduleForCommuteQuery();
+      if (selectedRange) {
+        const refreshed = await refreshTeacherScheduleForCommuteQuery();
+        if (!refreshed) {
+          container.innerHTML = '<div class="ccheck-empty">没有找到教师课表“搜索”按钮，请先确认当前页面是教师课表。</div>';
+          return;
+        }
+      }
       const scanned = await scanAll({ mode: 'commute' });
       if (!scanned) {
         container.innerHTML = '<div class="ccheck-empty">扫描没有完成，请确认教师课表已搜索出结果。</div>';
@@ -5234,26 +5281,21 @@
       }
     }
 
-    const groups = findCampusTeachers(state.lastEvents, { date, campus });
-    if (!groups.length) {
-      container.innerHTML = `<div class="ccheck-empty">${escapeHtml(date)} 没有查到在${escapeHtml(campus)}上课的老师。</div>`;
-      setStatus(`${date}：没有查到在${campus}上课的老师。`);
+    const groupedByDate = dates.map((date) => ({ date, groups: findCampusTeachers(state.lastEvents, { date, campus }) }));
+    if (!groupedByDate.some((item) => item.groups.length)) {
+      container.innerHTML = `<div class="ccheck-empty">所选日期没有查到在${escapeHtml(campus)}上课的老师。</div>`;
+      setStatus(`所选日期没有查到在${campus}上课的老师。`);
       return;
     }
+    const groups = groupedByDate.flatMap((item) => item.groups);
     container.innerHTML = `
-      <div class="ccheck-commute-summary">${escapeHtml(date)}：${groups.length} 位老师在${escapeHtml(campus)}</div>
-      ${groups.map((group, index) => `
-        <div class="ccheck-campus-teacher-card">
-          <strong>${escapeHtml(group.teacher)}</strong>
-          <small>${escapeHtml(group.events.map((event) => `${event.start}-${event.end}${event.text ? `｜${event.text}` : ''}`).join('；'))}</small>
-          <button class="ccheck-commute-locate" type="button" data-campus-teacher-locate="${index}">定位老师</button>
-        </div>
-      `).join('')}
+      <div class="ccheck-commute-summary">${dates.length} 天，共 ${new Set(groups.map((group) => group.teacher)).size} 位老师在${escapeHtml(campus)}</div>
+      ${groupedByDate.map(({ date, groups: dateGroups }) => dateGroups.length ? `<div class="ccheck-section-title">${escapeHtml(date)}：${dateGroups.length} 位老师</div>${dateGroups.map((group) => { const index = groups.indexOf(group); return `<div class="ccheck-campus-teacher-card"><strong>${escapeHtml(group.teacher)}</strong><small>${escapeHtml(group.events.map((event) => `${event.start}-${event.end}${event.text ? `｜${event.text}` : ''}`).join('；'))}</small><button class="ccheck-commute-locate" type="button" data-campus-teacher-locate="${index}">定位老师</button></div>`; }).join('')}` : '').join('')}
     `;
     container.querySelectorAll('[data-campus-teacher-locate]').forEach((button) => {
       button.addEventListener('click', () => locateCampusTeacherGroup(groups[Number(button.dataset.campusTeacherLocate)]));
     });
-    setStatus(`${date}：查到 ${groups.length} 位在${campus}上课的老师。`);
+    setStatus(`${dates.length} 天：查到 ${new Set(groups.map((group) => group.teacher)).size} 位在${campus}上课的老师。`);
   }
 
   async function locateCampusTeacherGroup(group) {
@@ -10434,6 +10476,13 @@
     }
     if (findCampusTeachers(events, { date: '2026-09-10', campus: '钱江校区' }).length !== 1) {
       throw new Error('切换校区后应只返回对应校区老师');
+    }
+    const multiDateGroups = [
+      ...findCampusTeachers(events, { date: '2026-09-10', campus: '城建校区' }),
+      ...findCampusTeachers(events, { date: '2026-09-11', campus: '城建校区' })
+    ];
+    if (multiDateGroups.length !== 3 || !multiDateGroups.some((group) => group.date === '2026-09-11' && group.teacher === '丁老师')) {
+      throw new Error('多日期查询应合并每个所选日期的校区老师');
     }
   }
 
