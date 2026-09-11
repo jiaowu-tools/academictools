@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.6.4
+// @version      1.6.5
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.6.4';
+  const SCRIPT_VERSION = '1.6.5';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -190,15 +190,7 @@
       };
     });
     window.addEventListener('popstate', scheduleInit);
-    const observeRoute = () => {
-      const root = document.documentElement || document.body;
-      if (!root) {
-        window.setTimeout(observeRoute, 100);
-        return;
-      }
-      new MutationObserver(check).observe(root, { childList: true, subtree: true });
-    };
-    observeRoute();
+    window.addEventListener('hashchange', check);
   }
 
   function installRoutePoller() {
@@ -222,7 +214,7 @@
       }
     };
     poll();
-    window.setInterval(poll, 500);
+    window.setInterval(poll, 1500);
   }
 
   function isTeacherSchedulePage() {
@@ -580,27 +572,6 @@
       .ccheck-campus-teacher-tools select {
         width: 100%;
         min-width: 0;
-      }
-
-      .ccheck-campus-teacher-dates {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 6px;
-        max-height: 76px;
-        overflow: auto;
-      }
-
-      .ccheck-campus-teacher-date-option {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 4px 7px;
-        border: 1px solid #bbf7d0;
-        border-radius: 999px;
-        background: #fff;
-        color: #166534;
-        cursor: pointer;
-        font-size: 12px;
       }
 
       .ccheck-campus-teacher-results {
@@ -1348,8 +1319,12 @@
     const originalFetch = window.fetch;
     if (typeof originalFetch === 'function') {
       window.fetch = async function ccheckFetch(input, init) {
+        const quickUrl = getRequestUrl(input);
+        if (!shouldInspectNetworkRequest(quickUrl, init?.method || input?.method)) {
+          return originalFetch.apply(this, arguments);
+        }
         const startedAt = Date.now();
-        const url = getRequestUrl(input);
+        const url = quickUrl;
         const method = getRequestMethod(input, init);
 
         try {
@@ -1404,12 +1379,14 @@
       this.__ccheckRequest = {
         method: method || 'GET',
         url: String(url || ''),
+        inspect: shouldInspectNetworkRequest(url, method),
         startedAt: 0
       };
       return xhrOpen.apply(this, arguments);
     };
     XMLHttpRequest.prototype.send = function ccheckXhrSend() {
       const request = this.__ccheckRequest || {};
+      if (!request.inspect) return xhrSend.apply(this, arguments);
       request.startedAt = Date.now();
       this.addEventListener('loadend', () => {
         let body = '';
@@ -1437,6 +1414,13 @@
 
   function shouldCaptureNetworkBody(url) {
     return /TeacherCourseSchedule\/diagram/i.test(String(url || ''));
+  }
+
+  function shouldInspectNetworkRequest(url, method) {
+    const requestUrl = String(url || '');
+    const requestMethod = String(method || 'GET').toUpperCase();
+    return shouldCaptureNetworkBody(requestUrl)
+      || (isMeetingSubmitPage() && ['POST', 'PUT', 'PATCH'].includes(requestMethod) && /meeting/i.test(requestUrl));
   }
 
   function getRequestUrl(input) {
@@ -1507,7 +1491,7 @@
       <div class="ccheck-body">
         <div class="ccheck-tabs">
           <button class="ccheck-tab ccheck-tab-active" type="button" data-view="audit">核对课表</button>
-          <button class="ccheck-tab" type="button" data-view="campus-teachers">当日校区查询</button>
+          <button class="ccheck-tab" type="button" data-view="campus-teachers">当日老师校区查询</button>
           <button class="ccheck-tab" type="button" data-view="meeting">排会议</button>
           <button class="ccheck-tab" type="button" data-view="supervisor">督导排班</button>
         </div>
@@ -1554,7 +1538,13 @@
           <div class="ccheck-campus-teacher-query">
             <div class="ccheck-section-title">当日老师校区查询</div>
             <div class="ccheck-campus-teacher-tools">
-              <div class="ccheck-field" style="grid-column: 1 / -1; align-items: flex-start;"><span>日期（可多选）</span><div class="ccheck-campus-teacher-dates" id="ccheck-campus-teacher-dates"></div></div>
+              <div class="ccheck-field ccheck-date-range-row">
+                <span>日期范围</span>
+                <button class="ccheck-btn ccheck-date-range-trigger" type="button" data-action="campus-teacher-date-range" data-empty="true">选择日期范围</button>
+                <input id="ccheck-campus-teacher-start" type="date" hidden>
+                <input id="ccheck-campus-teacher-end" type="date" hidden>
+                <div class="ccheck-date-picker" id="ccheck-campus-teacher-date-picker" hidden></div>
+              </div>
               <label class="ccheck-field">校区 <select id="ccheck-campus-teacher-campus">${renderCommuteCampusOptions()}</select></label>
             </div>
             <div class="ccheck-commute-actions">
@@ -1666,6 +1656,7 @@
         findMeetingSlots({ skipSystemDateSearch });
       }
       if (action === 'meeting-date-range') toggleMeetingDateRangePicker();
+      if (action === 'campus-teacher-date-range') toggleCampusTeacherDateRangePicker();
       if (action.startsWith('meeting-date-')) {
         event.preventDefault();
         event.stopPropagation();
@@ -1677,6 +1668,13 @@
       if (action === 'meeting-date-clear') clearMeetingDateRangePicker();
       if (action === 'meeting-date-close') closeMeetingDateRangePicker();
       if (action === 'meeting-date-pick') pickMeetingDate(button.dataset.date);
+      if (action === 'campus-teacher-date-prev') moveCampusTeacherDatePickerMonth(-1);
+      if (action === 'campus-teacher-date-next') moveCampusTeacherDatePickerMonth(1);
+      if (action === 'campus-teacher-date-prev-year') moveCampusTeacherDatePickerMonth(-12);
+      if (action === 'campus-teacher-date-next-year') moveCampusTeacherDatePickerMonth(12);
+      if (action === 'campus-teacher-date-clear') clearCampusTeacherDateRangePicker();
+      if (action === 'campus-teacher-date-close') closeCampusTeacherDateRangePicker();
+      if (action === 'campus-teacher-date-pick') pickCampusTeacherDate(button.dataset.date);
       if (action === 'supervisor-select-all') selectAllSupervisors();
       if (action === 'supervisor-clear') clearSupervisorSelection();
       if (action === 'supervisor-find') findSupervisorSlots();
@@ -1711,15 +1709,22 @@
       switchView(tab.dataset.view);
     });
 
-    document.addEventListener('click', (event) => {
-      const picker = document.getElementById('ccheck-meeting-date-picker');
-      if (!picker || picker.hidden) return;
-      if (event.target.closest('#ccheck-meeting-date-picker, button[data-action="meeting-date-range"]')) return;
-      setTimeout(() => {
-        const currentPicker = document.getElementById('ccheck-meeting-date-picker');
-        if (currentPicker && !currentPicker.hidden) closeMeetingDateRangePicker();
-      }, 0);
-    });
+    if (!window.__ccheckDatePickerOutsideClickInstalled) {
+      window.__ccheckDatePickerOutsideClickInstalled = true;
+      document.addEventListener('click', (event) => {
+        const picker = document.getElementById('ccheck-meeting-date-picker');
+        const campusPicker = document.getElementById('ccheck-campus-teacher-date-picker');
+        if ((!picker || picker.hidden) && (!campusPicker || campusPicker.hidden)) return;
+        if (event.target.closest('#ccheck-meeting-date-picker, button[data-action="meeting-date-range"]')) return;
+        if (event.target.closest('#ccheck-campus-teacher-date-picker, button[data-action="campus-teacher-date-range"]')) return;
+        setTimeout(() => {
+          const currentPicker = document.getElementById('ccheck-meeting-date-picker');
+          if (currentPicker && !currentPicker.hidden) closeMeetingDateRangePicker();
+          const currentCampusPicker = document.getElementById('ccheck-campus-teacher-date-picker');
+          if (currentCampusPicker && !currentCampusPicker.hidden) closeCampusTeacherDateRangePicker();
+        }, 0);
+      });
+    }
 
     updateMeetingDateRangeTrigger();
     updateMeetingRangeLabel();
@@ -5202,28 +5207,127 @@
   }
 
   function refreshCampusTeacherDate(events = state.lastEvents) {
-    const container = document.getElementById('ccheck-campus-teacher-dates');
-    if (!container) return [];
+    const startInput = document.getElementById('ccheck-campus-teacher-start');
+    const endInput = document.getElementById('ccheck-campus-teacher-end');
+    const trigger = document.querySelector('#ccheck-panel button[data-action="campus-teacher-date-range"]');
     const dates = resolveCommuteDateOptions(events, getTeacherScheduleDateRange(), getHeaderColumns().map((column) => column.date));
-    const previous = new Set(String(container.dataset.selectedDates || '').split(',').filter((date) => dates.includes(date)));
-    const selected = previous.size ? previous : new Set(dates.slice(0, 1));
-    container.dataset.selectedDates = Array.from(selected).join(',');
-    container.innerHTML = dates.length
-      ? dates.map((date) => `<label class="ccheck-campus-teacher-date-option"><input type="checkbox" data-campus-teacher-date="${escapeHtml(date)}" ${selected.has(date) ? 'checked' : ''}>${escapeHtml(formatShortDate(date))}</label>`).join('')
-      : '<span class="ccheck-muted">先在教师课表选择日期</span>';
-    container.querySelectorAll('[data-campus-teacher-date]').forEach((input) => {
-      input.addEventListener('change', () => {
-        const checked = Array.from(container.querySelectorAll('[data-campus-teacher-date]:checked')).map((item) => item.dataset.campusTeacherDate);
-        container.dataset.selectedDates = checked.join(',');
-      });
-    });
-    return Array.from(selected);
+    if (!startInput || !endInput || !trigger) return dates;
+    const current = readCampusTeacherDateRange();
+    const scheduleRange = getTeacherScheduleDateRange();
+    const fallback = dates[0] || formatDateInput(new Date());
+    if (!current) {
+      startInput.value = scheduleRange?.startDate || fallback;
+      endInput.value = scheduleRange?.endDate || scheduleRange?.startDate || fallback;
+    }
+    updateCampusTeacherDateRangeTrigger();
+    return buildDateRange(startInput.value, endInput.value);
+  }
+
+  function readCampusTeacherDateRange() {
+    let startDate = document.getElementById('ccheck-campus-teacher-start')?.value || '';
+    let endDate = document.getElementById('ccheck-campus-teacher-end')?.value || '';
+    if (!isIsoDate(startDate) || !isIsoDate(endDate)) return null;
+    if (startDate > endDate) [startDate, endDate] = [endDate, startDate];
+    return { startDate, endDate };
   }
 
   function getSelectedCampusTeacherDates() {
-    const container = document.getElementById('ccheck-campus-teacher-dates');
-    if (!container) return [];
-    return Array.from(container.querySelectorAll('[data-campus-teacher-date]:checked')).map((input) => input.dataset.campusTeacherDate).filter(isIsoDate);
+    const dateRange = readCampusTeacherDateRange();
+    return dateRange ? buildDateRange(dateRange.startDate, dateRange.endDate) : [];
+  }
+
+  function updateCampusTeacherDateRangeTrigger() {
+    const trigger = document.querySelector('#ccheck-panel button[data-action="campus-teacher-date-range"]');
+    if (!trigger) return;
+    const range = readCampusTeacherDateRange();
+    trigger.textContent = range ? `${formatShortDate(range.startDate)} 至 ${formatShortDate(range.endDate)}` : '选择日期范围';
+    trigger.dataset.empty = range ? 'false' : 'true';
+  }
+
+  function toggleCampusTeacherDateRangePicker() {
+    const picker = document.getElementById('ccheck-campus-teacher-date-picker');
+    if (!picker) return;
+    if (!picker.hidden) return closeCampusTeacherDateRangePicker();
+    const range = readCampusTeacherDateRange();
+    picker.dataset.cursorMonth = (range?.startDate || formatDateInput(new Date())).slice(0, 7);
+    picker.dataset.pendingStart = '';
+    picker.dataset.selectingEnd = 'false';
+    renderCampusTeacherDateRangePicker();
+    picker.hidden = false;
+  }
+
+  function closeCampusTeacherDateRangePicker() {
+    const picker = document.getElementById('ccheck-campus-teacher-date-picker');
+    if (picker) picker.hidden = true;
+  }
+
+  function clearCampusTeacherDateRangePicker() {
+    const start = document.getElementById('ccheck-campus-teacher-start');
+    const end = document.getElementById('ccheck-campus-teacher-end');
+    if (start) start.value = '';
+    if (end) end.value = '';
+    updateCampusTeacherDateRangeTrigger();
+    renderCampusTeacherDateRangePicker();
+  }
+
+  function moveCampusTeacherDatePickerMonth(offset) {
+    const picker = document.getElementById('ccheck-campus-teacher-date-picker');
+    if (!picker) return;
+    const cursor = parseMeetingPickerMonth(picker.dataset.cursorMonth) || new Date();
+    cursor.setMonth(cursor.getMonth() + offset);
+    picker.dataset.cursorMonth = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+    renderCampusTeacherDateRangePicker();
+  }
+
+  function pickCampusTeacherDate(dateText) {
+    const picker = document.getElementById('ccheck-campus-teacher-date-picker');
+    if (!picker || !isIsoDate(dateText)) return;
+    const start = document.getElementById('ccheck-campus-teacher-start');
+    const end = document.getElementById('ccheck-campus-teacher-end');
+    const pending = isIsoDate(picker.dataset.pendingStart) ? picker.dataset.pendingStart : '';
+    if (picker.dataset.selectingEnd !== 'true' || !pending) {
+      if (start) start.value = dateText;
+      if (end) end.value = '';
+      picker.dataset.pendingStart = dateText;
+      picker.dataset.selectingEnd = 'true';
+      updateCampusTeacherDateRangeTrigger();
+      renderCampusTeacherDateRangePicker();
+      return;
+    }
+    let startDate = pending;
+    let endDate = dateText;
+    if (startDate > endDate) [startDate, endDate] = [endDate, startDate];
+    if (start) start.value = startDate;
+    if (end) end.value = endDate;
+    picker.dataset.pendingStart = '';
+    picker.dataset.selectingEnd = 'false';
+    updateCampusTeacherDateRangeTrigger();
+    renderCampusTeacherDateRangePicker();
+    closeCampusTeacherDateRangePicker();
+  }
+
+  function renderCampusTeacherDateRangePicker() {
+    const picker = document.getElementById('ccheck-campus-teacher-date-picker');
+    if (!picker) return;
+    const cursor = parseMeetingPickerMonth(picker.dataset.cursorMonth) || new Date();
+    const year = cursor.getFullYear();
+    const month = cursor.getMonth() + 1;
+    const firstDay = new Date(year, month - 1, 1).getDay();
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const range = readCampusTeacherDateRange();
+    const pending = isIsoDate(picker.dataset.pendingStart) ? picker.dataset.pendingStart : '';
+    const selectingEnd = picker.dataset.selectingEnd === 'true';
+    const activeStart = selectingEnd ? pending : range?.startDate || '';
+    const activeEnd = selectingEnd ? '' : range?.endDate || '';
+    const cells = [];
+    for (let i = 0; i < firstDay; i += 1) cells.push('<button class="ccheck-date-day is-empty" type="button" tabindex="-1"></button>');
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const dateText = makeDateInput(year, month, day);
+      const selected = dateText === activeStart || dateText === activeEnd;
+      const inRange = activeStart && activeEnd && dateText > activeStart && dateText < activeEnd;
+      cells.push(`<button class="ccheck-date-day${selected ? ' is-selected' : ''}${inRange ? ' is-in-range' : ''}" type="button" data-action="campus-teacher-date-pick" data-date="${dateText}">${day}</button>`);
+    }
+    picker.innerHTML = `<div class="ccheck-date-picker-head"><button class="ccheck-date-picker-nav" type="button" data-action="campus-teacher-date-prev-year">‹‹</button><button class="ccheck-date-picker-nav" type="button" data-action="campus-teacher-date-prev">‹</button><div class="ccheck-date-picker-title">${year}年${month}月</div><button class="ccheck-date-picker-nav" type="button" data-action="campus-teacher-date-next">›</button><button class="ccheck-date-picker-nav" type="button" data-action="campus-teacher-date-next-year">››</button></div><div class="ccheck-date-picker-hint">${selectingEnd && pending ? `已选开始：${formatShortDate(pending)}，请再点结束日期` : '先点开始日期，再点结束日期'}</div><div class="ccheck-date-grid"><div class="ccheck-date-weekday">日</div><div class="ccheck-date-weekday">一</div><div class="ccheck-date-weekday">二</div><div class="ccheck-date-weekday">三</div><div class="ccheck-date-weekday">四</div><div class="ccheck-date-weekday">五</div><div class="ccheck-date-weekday">六</div>${cells.join('')}</div><div class="ccheck-date-picker-foot"><button class="ccheck-btn" type="button" data-action="campus-teacher-date-clear">清空</button><button class="ccheck-btn" type="button" data-action="campus-teacher-date-close">关闭</button></div>`;
   }
 
   function findCampusTeachers(events, query) {
@@ -5251,34 +5355,27 @@
 
   async function queryCampusTeachers() {
     const container = document.getElementById('ccheck-campus-teacher-results');
-    const dates = getSelectedCampusTeacherDates();
+    const dateRange = readCampusTeacherDateRange();
+    const dates = dateRange ? buildDateRange(dateRange.startDate, dateRange.endDate) : [];
     const campus = document.getElementById('ccheck-campus-teacher-campus')?.value || '';
     if (!container) return;
     if (!dates.length || !campus) {
-      container.innerHTML = '<div class="ccheck-empty">请至少选择一天日期和一个校区。</div>';
+      container.innerHTML = '<div class="ccheck-empty">请选择日期范围和校区。</div>';
       return;
     }
 
-    const selectedRange = getTeacherScheduleDateRange();
-    const loadedDates = new Set((state.lastEvents || []).map((event) => event?.date).filter(Boolean));
-    const queryRange = { startDate: dates[0], endDate: dates[dates.length - 1] };
-    if (selectedRange && (selectedRange.startDate !== queryRange.startDate || selectedRange.endDate !== queryRange.endDate)) {
-      await setScheduleDateFilters(queryRange);
+    container.innerHTML = '<div class="ccheck-empty">正在把日期范围写入教师课表并点击“搜索”，请稍候。</div>';
+    setStatus(`正在查询 ${dateRange.startDate} 至 ${dateRange.endDate} 的${campus}老师。`);
+    const searchResult = await applyScheduleDateFiltersAndSearch(dateRange);
+    if (!searchResult.ok) {
+      container.innerHTML = `<div class="ccheck-empty">${escapeHtml(searchResult.message)}</div>`;
+      setStatus(searchResult.message);
+      return;
     }
-    if (selectedRange || !state.lastEvents.length || dates.some((date) => !loadedDates.has(date))) {
-      container.innerHTML = '<div class="ccheck-empty">正在按教师课表当前日期刷新数据，请稍候。</div>';
-      if (selectedRange) {
-        const refreshed = await refreshTeacherScheduleForCommuteQuery();
-        if (!refreshed) {
-          container.innerHTML = '<div class="ccheck-empty">没有找到教师课表“搜索”按钮，请先确认当前页面是教师课表。</div>';
-          return;
-        }
-      }
-      const scanned = await scanAll({ mode: 'commute' });
-      if (!scanned) {
-        container.innerHTML = '<div class="ccheck-empty">扫描没有完成，请确认教师课表已搜索出结果。</div>';
-        return;
-      }
+    const scanned = await scanAll({ mode: 'commute' });
+    if (!scanned) {
+      container.innerHTML = '<div class="ccheck-empty">扫描没有完成，请确认教师课表已搜索出结果。</div>';
+      return;
     }
 
     const groupedByDate = dates.map((date) => ({ date, groups: findCampusTeachers(state.lastEvents, { date, campus }) }));
@@ -8038,6 +8135,12 @@
     if (!/const refreshed = await refreshTeacherScheduleForCommuteQuery\(\);/.test(source)) {
       throw new Error('查询跑校区自动扫描前应按当前日期刷新教师课表');
     }
+    if (!/data-action="campus-teacher-date-range"[^>]*>选择日期范围<\/button>/.test(source)) {
+      throw new Error('当日老师校区查询应使用日期范围选择器');
+    }
+    if (!/const searchResult = await applyScheduleDateFiltersAndSearch\(dateRange\);/.test(source)) {
+      throw new Error('当日老师校区查询应按所选日期范围自动设置并搜索');
+    }
   }
 
   function assertSelfTestSingleMeetingDraftPath() {
@@ -10795,7 +10898,7 @@
     } else {
       setStatus(nextView === 'meeting'
         ? '已切换到排会议。先扫描课表，再选择老师查找共同空档。'
-        : (nextView === 'campus-teachers' ? '已切换到校区老师。先扫描课表，再按日期和校区查询。' : '已切换到核对课表。'));
+        : (nextView === 'campus-teachers' ? '已切换到当日老师校区查询。选择日期范围和校区后可自动查询。' : '已切换到核对课表。'));
     }
   }
 
