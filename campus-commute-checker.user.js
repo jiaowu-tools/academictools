@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.6.5
+// @version      1.6.6
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.6.5';
+  const SCRIPT_VERSION = '1.6.6';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -1491,7 +1491,7 @@
       <div class="ccheck-body">
         <div class="ccheck-tabs">
           <button class="ccheck-tab ccheck-tab-active" type="button" data-view="audit">核对课表</button>
-          <button class="ccheck-tab" type="button" data-view="campus-teachers">当日老师校区查询</button>
+          <button class="ccheck-tab" type="button" data-view="campus-teachers">当日校区查询</button>
           <button class="ccheck-tab" type="button" data-view="meeting">排会议</button>
           <button class="ccheck-tab" type="button" data-view="supervisor">督导排班</button>
         </div>
@@ -1536,7 +1536,7 @@
         </div>
         <div class="ccheck-view" id="ccheck-view-campus-teachers" hidden>
           <div class="ccheck-campus-teacher-query">
-            <div class="ccheck-section-title">当日老师校区查询</div>
+            <div class="ccheck-section-title">当日校区查询</div>
             <div class="ccheck-campus-teacher-tools">
               <div class="ccheck-field ccheck-date-range-row">
                 <span>日期范围</span>
@@ -1657,6 +1657,10 @@
       }
       if (action === 'meeting-date-range') toggleMeetingDateRangePicker();
       if (action === 'campus-teacher-date-range') toggleCampusTeacherDateRangePicker();
+      if (action.startsWith('campus-teacher-date-')) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
       if (action.startsWith('meeting-date-')) {
         event.preventDefault();
         event.stopPropagation();
@@ -8136,10 +8140,13 @@
       throw new Error('查询跑校区自动扫描前应按当前日期刷新教师课表');
     }
     if (!/data-action="campus-teacher-date-range"[^>]*>选择日期范围<\/button>/.test(source)) {
-      throw new Error('当日老师校区查询应使用日期范围选择器');
+      throw new Error('当日校区查询应使用日期范围选择器');
     }
     if (!/const searchResult = await applyScheduleDateFiltersAndSearch\(dateRange\);/.test(source)) {
-      throw new Error('当日老师校区查询应按所选日期范围自动设置并搜索');
+      throw new Error('当日校区查询应按所选日期范围自动设置并搜索');
+    }
+    if (!/action\.startsWith\('campus-teacher-date-'\)[\s\S]{0,120}event\.stopPropagation\(\);/.test(source)) {
+      throw new Error('当日校区日期选择器点击不应被外部关闭监听抢走');
     }
   }
 
@@ -10898,7 +10905,7 @@
     } else {
       setStatus(nextView === 'meeting'
         ? '已切换到排会议。先扫描课表，再选择老师查找共同空档。'
-        : (nextView === 'campus-teachers' ? '已切换到当日老师校区查询。选择日期范围和校区后可自动查询。' : '已切换到核对课表。'));
+        : (nextView === 'campus-teachers' ? '已切换到当日校区查询。选择日期范围和校区后可自动查询。' : '已切换到核对课表。'));
     }
   }
 
