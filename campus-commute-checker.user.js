@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.6.7
+// @version      1.6.8
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.6.7';
+  const SCRIPT_VERSION = '1.6.8';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -9304,6 +9304,9 @@
     assertSupervisorRanges(parseSupervisorCell('N查收', false).availableRanges, [
       { startMinutes: 8 * 60 + 30, endMinutes: 17 * 60 + 30 }
     ], 'N查收 应为早班');
+    assertSupervisorRanges(parseSupervisorCell('N查', false).availableRanges, [
+      { startMinutes: 8 * 60 + 30, endMinutes: 17 * 60 + 30 }
+    ], 'N查 应为早班');
     assertSupervisorRanges(parseSupervisorCell('N收', false).availableRanges, [
       { startMinutes: 8 * 60 + 30, endMinutes: 17 * 60 + 30 }
     ], 'N收 应为早班');
@@ -9313,6 +9316,9 @@
     assertSupervisorRanges(parseSupervisorCell('A查收', false).availableRanges, [
       { startMinutes: 13 * 60 + 15, endMinutes: 21 * 60 + 30 }
     ], 'A查收 应为晚班');
+    assertSupervisorRanges(parseSupervisorCell('A查', false).availableRanges, [
+      { startMinutes: 13 * 60 + 15, endMinutes: 21 * 60 + 30 }
+    ], 'A查 应为晚班');
     assertSupervisorRanges(parseSupervisorCell('A收', false).availableRanges, [
       { startMinutes: 13 * 60 + 15, endMinutes: 21 * 60 + 30 }
     ], 'A收 应为晚班');
@@ -11814,9 +11820,9 @@
 
   function parseSupervisorShiftCode(text) {
     const compact = String(text || '').trim().toUpperCase().replace(/\s+/g, '');
-    if (/^N(?:查?收)?$/.test(compact) || /早班?/.test(text)) return 'N';
-    if (/^A(?:查?收)?$/.test(compact) || /晚班?/.test(text)) return 'A';
-    if (/^F(?:查?收)?$/.test(compact) || /灵活/.test(text)) return 'F';
+    if (/^N(?:查收|查|收)?$/.test(compact) || /早班?/.test(text)) return 'N';
+    if (/^A(?:查收|查|收)?$/.test(compact) || /晚班?/.test(text)) return 'A';
+    if (/^F(?:查收|查|收)?$/.test(compact) || /灵活/.test(text)) return 'F';
     return '';
   }
 
