@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.6.8
+// @version      1.6.9
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.6.8';
+  const SCRIPT_VERSION = '1.6.9';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -68,7 +68,8 @@
       '#7F91F5': '虚拟校区',
       '#FB5757': '钱江校区',
       '#FFBF41': '城建校区',
-      '#B290FE': '紫金港校区'
+      '#B290FE': '紫金港校区',
+      '#31D580': '临平校区'
     },
     onlineByColor: {
       '#FFAFDE': '会议/教研/线上占用'
@@ -80,7 +81,8 @@
       '金华校区',
       '钱江校区',
       '城建校区',
-      '紫金港校区'
+      '紫金港校区',
+      '临平校区'
     ]),
     commuteRules: {
       '城建校区|钱江校区': 45,
@@ -92,7 +94,14 @@
       '城建校区|永康校区': 150,
       '钱江校区|永康校区': 150,
       '紫金港校区|永康校区': 195,
-      '金华校区|永康校区': 90
+      '金华校区|永康校区': 90,
+      '临平校区|下沙校区': 60,
+      '临平校区|小和山校区': 60,
+      '临平校区|永康校区': 60,
+      '临平校区|金华校区': 60,
+      '临平校区|钱江校区': 60,
+      '临平校区|城建校区': 60,
+      '临平校区|紫金港校区': 60
     }
   };
 
@@ -7828,6 +7837,10 @@
   function runCampusCommuteSelfTests() {
     const tests = [
       {
+        name: '临平校区：颜色、双向一小时通勤和当日校区查询',
+        run: assertSelfTestLinpingCampus
+      },
+      {
         name: '版本号：@version 与 SCRIPT_VERSION 一致',
         run: assertSelfTestVersionSync
       },
@@ -10605,6 +10618,56 @@
     ];
     if (multiDateGroups.length !== 3 || !multiDateGroups.some((group) => group.date === '2026-09-11' && group.teacher === '丁老师')) {
       throw new Error('多日期查询应合并每个所选日期的校区老师');
+    }
+  }
+
+  function assertSelfTestLinpingCampus() {
+    const campus = '临平校区';
+    const color = classifyColor(normalizeHex('rgb(49, 213, 128)'));
+    if (color.type !== 'real' || color.campus !== campus
+      || normalizeCampusName('临平') !== campus
+      || !renderCommuteCampusOptions().includes('<option value="临平校区">临平校区</option>')) {
+      throw new Error('临平色块应识别为实体校区并加入校区查询选项');
+    }
+    if (getCommuteMinutes(campus, campus) !== 0) {
+      throw new Error('临平同校区不需要通勤');
+    }
+    const date = '2026-10-20';
+    for (const other of CONFIG.realCampuses) {
+      if (other === campus) continue;
+      if (getCommuteMinutes(campus, other) !== 60 || getCommuteMinutes(other, campus) !== 60) {
+        throw new Error(`临平与${other}双向通勤应为 60 分钟`);
+      }
+      for (const [from, to] of [[campus, other], [other, campus]]) {
+        for (const gap of [59, 60]) {
+          const events = [from, to].map((location, index) => makeSelfTestCourseEvent({
+            key: `${location}-${index}`,
+            teacher: '临平测试老师',
+            date,
+            campus: location,
+            hex: findColorForCampus(location, '线下'),
+            courseForm: '线下',
+            startMinutes: index ? 585 + gap : 540,
+            endMinutes: index ? 630 + gap : 585,
+            start: formatMinutes(index ? 585 + gap : 540),
+            end: formatMinutes(index ? 630 + gap : 585)
+          }));
+          const result = analyze(events, makeSelfTestSettings());
+          const shortages = result.anomalies.filter((item) => item.kind === '异常：时间不够跑校区');
+          if (shortages.length !== (gap < 60 ? 1 : 0)) {
+            throw new Error(`${from}到${to}间隔${gap}分钟的通勤判断错误`);
+          }
+          const legs = findCampusCommuteLegs(events, { date, fromCampus: from, toCampus: to });
+          if (legs.length !== 1) throw new Error('跑校区查询应识别临平的双向行程');
+          const groups = findCampusTeachers(events, { date, campus });
+          if (groups.length !== 1 || groups[0].teacher !== '临平测试老师' || groups[0].events.length !== 1) {
+            throw new Error('当日临平校区查询应返回对应老师和课程');
+          }
+          if (findCampusTeachers(events, { date: '2026-10-21', campus }).length) {
+            throw new Error('当日临平校区查询不应混入其他日期');
+          }
+        }
+      }
     }
   }
 
