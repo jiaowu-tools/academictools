@@ -5073,6 +5073,32 @@ body:not(.home-mode) .top-tool-switcher.is-open:hover .tool-switch-menu {
       </div>
     </div>
 
+    <div class="section" id="campusHoursSection">
+      <h4>校区课时统计</h4>
+      <div class="bar">
+        <input type="file" id="campusHoursFile" accept=".xlsx,.csv" style="display:none" onchange="CampusHoursApp.load(this)">
+        <button onclick="document.getElementById('campusHoursFile').click()" class="primary">导入课表</button>
+        <button onclick="CampusHoursApp.export('all')" class="success">导出全部</button>
+        <button onclick="CampusHoursApp.export('science')" class="success">导出理科</button>
+        <button onclick="CampusHoursApp.export('english')" class="success">导出英语</button>
+        <button onclick="CampusHoursApp.reset()" class="warning">重置课时统计</button>
+      </div>
+      <div class="tip" id="campusHoursStatus" role="status">等待导入课表</div>
+      <div class="tip" id="campusHoursWarning" role="alert" style="display:none;color:#b45309"></div>
+      <div class="table-wrap" id="campusHoursSummaryWrap" style="max-height:40vh;margin-top:16px;display:none;">
+        <table class="virtual-table">
+          <thead><tr><th>校区</th><th>有效课程记录数</th><th>全部课时</th><th>理科课时</th><th>英语课时</th></tr></thead>
+          <tbody id="campusHoursSummaryBody"></tbody>
+        </table>
+      </div>
+      <div class="table-wrap" id="campusHoursAnomalyWrap" style="max-height:30vh;margin-top:16px;display:none;">
+        <table class="virtual-table">
+          <thead><tr><th>原表行号</th><th>校区</th><th>上课日期</th><th>起始时间</th><th>结束时间</th><th>异常原因</th></tr></thead>
+          <tbody id="campusHoursAnomalyBody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- 课表显示 -->
     <div class="section" id="feedbackScheduleSection">
       <h4>课表显示</h4>
@@ -6126,6 +6152,304 @@ const TeacherApp = (function() {
         container.style.opacity = '1';
         showToast('已重置所有数据', 'info');
       }, 300);
+    }
+  };
+})();
+
+// ==================== 校区课时统计 ====================
+const CampusHoursApp = (function() {
+  const KEY_COLUMNS = ['姓名','班级','班号','科目','教师','教室','阶段','校区','班级类型','课程形式','上课日期','起始时间','结束时间'];
+  let head = [], valid = [], anomalies = [], importInfo = null;
+  let readVersion = 0;
+
+  function timeSeconds(value) {
+    if (value instanceof Date) return value.getHours() * 3600 + value.getMinutes() * 60 + value.getSeconds();
+    if (typeof value === 'number') return value >= 0 && value < 1 ? Math.round(value * 86400) : null;
+    const match = String(value ?? '').trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (!match || +match[1] > 23 || +match[2] > 59 || +(match[3] || 0) > 59) return null;
+    return +match[1] * 3600 + +match[2] * 60 + +(match[3] || 0);
+  }
+
+  function normalizeTime(value) {
+    const seconds = timeSeconds(value);
+    if (seconds === null) return String(value ?? '').trim();
+    const parts = [Math.floor(seconds / 3600), Math.floor(seconds / 60) % 60, seconds % 60];
+    return parts.slice(0, parts[2] ? 3 : 2).map(n => String(n).padStart(2, '0')).join(':');
+  }
+
+  function summarize(rows) {
+    const teachers = new Set(TeacherListApp.getAllScienceTeachers().map(name => name.trim()));
+    const campuses = new Map();
+    const total = { campus: '合计', count: 0, seconds: 0, science: 0, english: 0 };
+    rows.forEach(item => {
+      const campus = item.row[head.indexOf('校区')] || '未填写校区';
+      if (!campuses.has(campus)) campuses.set(campus, { campus, count: 0, seconds: 0, science: 0, english: 0 });
+      const group = teachers.has(item.row[head.indexOf('教师')]) ? 'science' : 'english';
+      [campuses.get(campus), total].forEach(entry => {
+        entry.count++;
+        entry.seconds += item.seconds;
+        entry[group] += item.seconds;
+      });
+    });
+    return [...Array.from(campuses.values()).sort((a, b) => b.seconds - a.seconds), total];
+  }
+
+  function render() {
+    const status = document.getElementById('campusHoursStatus');
+    const warning = document.getElementById('campusHoursWarning');
+    const summaryBody = document.getElementById('campusHoursSummaryBody');
+    const anomalyBody = document.getElementById('campusHoursAnomalyBody');
+    summaryBody.replaceChildren();
+    anomalyBody.replaceChildren();
+    document.getElementById('campusHoursSummaryWrap').style.display = importInfo ? '' : 'none';
+    document.getElementById('campusHoursAnomalyWrap').style.display = anomalies.length ? '' : 'none';
+    warning.style.display = anomalies.length ? '' : 'none';
+    warning.textContent = anomalies.length ? `发现 ${anomalies.length} 条异常课程，已从课时统计中排除，请核对下表；导出文件也会保留异常记录。` : '';
+    if (!importInfo) {
+      status.textContent = '等待导入课表';
+      return;
+    }
+    const detail = Object.entries(importInfo.excluded).map(([name, count]) => `${name}${count}条`).join('、');
+    status.textContent = `日期范围：${importInfo.start || '未填写'} 至 ${importInfo.end || '未填写'}；原始${importInfo.original}条，删除重复${importInfo.duplicates}条，清理${importInfo.cleaned}条（${detail || '无'}），异常${anomalies.length}条，有效${valid.length}条。`;
+    function appendRow(body, values) {
+      const tr = document.createElement('tr');
+      values.forEach(value => {
+        const td = document.createElement('td');
+        td.textContent = String(value);
+        tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    }
+    summarize(valid).forEach(entry => appendRow(summaryBody, [entry.campus, entry.count, (entry.seconds / 2700).toFixed(2), (entry.science / 2700).toFixed(2), (entry.english / 2700).toFixed(2)]));
+    anomalies.forEach(item => appendRow(anomalyBody, [item.sourceRow, ...['校区','上课日期','起始时间','结束时间'].map(name => item.row[head.indexOf(name)]), item.reason]));
+  }
+
+  function* processRows(sheetRows) {
+    const nextHead = (sheetRows[0] || []).map(value => String(value ?? '').trim());
+    const missing = [...KEY_COLUMNS, '课程类型'].filter(name => !nextHead.includes(name));
+    if (missing.length) throw new Error(`缺少列：${missing.join('、')}`);
+    const nextValid = [], nextAnomalies = [], excluded = {};
+    const seen = new Set();
+    let firstDate = '', lastDate = '';
+    let original = 0, duplicates = 0, cleaned = 0;
+    const index = Object.fromEntries(nextHead.map((name, i) => [name, i]));
+    const oneIndices = KEY_COLUMNS.map(name => index[name]);
+    const groupIndices = oneIndices.slice(1);
+    for (let offset = 0; offset < sheetRows.length - 1; offset++) {
+      if (offset % 500 === 0) yield offset;
+      const source = sheetRows[offset + 1];
+      if (!source.some(value => value !== null && value !== undefined && String(value).trim() !== '')) continue;
+      original++;
+      const row = nextHead.map((name, i) => {
+        const value = source[i];
+        if (name === '起始时间' || name === '结束时间') return normalizeTime(value);
+        if (value instanceof Date) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+        if (name === '上课日期') return String(value ?? '').trim().replace(/\//g, '-').replace(/^(\d{4})-(\d{1,2})-(\d{1,2})$/, (_, y, m, d) => `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`);
+        return String(value ?? '').trim();
+      });
+      if (!row[index['校区']]) row[index['校区']] = '未填写校区';
+      const date = row[index['上课日期']];
+      if (date && (!firstDate || date < firstDate)) firstDate = date;
+      if (date && (!lastDate || date > lastDate)) lastDate = date;
+      const one = /单人|一对一|一人班/.test(row[index['班级类型']]);
+      const key = JSON.stringify((one ? oneIndices : groupIndices).map(i => row[i]));
+      if (seen.has(key)) { duplicates++; continue; }
+      seen.add(key);
+      const teacher = row[index['教师']], type = row[index['课程类型']] || '', subject = row[index['科目']];
+      let reason = '';
+      if (/培训|虚拟|教师/.test(teacher)) reason = '虚拟教师';
+      else if (/G类|G型/.test(type)) reason = 'G类（督导）';
+      else if (/S类|S型/.test(type)) reason = 'S类';
+      else if (/orientation/i.test(subject) || /^ori$/i.test(subject)) reason = 'Ori';
+      else if (subject.includes('模考')) reason = '模考';
+      if (reason) {
+        excluded[reason] = (excluded[reason] || 0) + 1;
+        cleaned++;
+        continue;
+      }
+      const start = timeSeconds(row[index['起始时间']]), end = timeSeconds(row[index['结束时间']]);
+      if (start === null || end === null || end < start) {
+        nextAnomalies.push({ row, sourceRow: offset + 2, reason: start === null || end === null ? '起始或结束时间缺失/格式无效' : '结束时间早于起始时间' });
+      } else {
+        if (row[index['班级类型']].includes('多人')) row[index['姓名']] = '';
+        nextValid.push({ row, seconds: end - start });
+      }
+    }
+    head = nextHead;
+    valid = nextValid;
+    anomalies = nextAnomalies;
+    importInfo = { original, duplicates, cleaned, excluded, start: firstDate, end: lastDate };
+    render();
+    return { ...importInfo, valid: valid.length, anomalies: anomalies.length };
+  }
+
+  function process(sheetRows) {
+    const steps = processRows(sheetRows);
+    let step;
+    do { step = steps.next(); } while (!step.done);
+    return step.value;
+  }
+
+  function download(wb, filename) {
+    // 现有 SheetJS 社区版不写入边框和对齐，直接补全导出包的汇总页样式。
+    const zip = XLSX.CFB.read(new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' })), { type: 'array' });
+    const decoder = new TextDecoder(), encoder = new TextEncoder();
+    const stylesFile = XLSX.CFB.find(zip, '/xl/styles.xml');
+    const sheetFile = XLSX.CFB.find(zip, '/xl/worksheets/sheet1.xml');
+    let styles = decoder.decode(stylesFile.content);
+    const borderId = Number(styles.match(/<borders count="(\d+)"/)[1]);
+    const styleId = Number(styles.match(/<cellXfs count="(\d+)"/)[1]);
+    const fontId = Number(styles.match(/<fonts count="(\d+)"/)[1]);
+    const font = '<font><sz val="10"/><color rgb="FF000000"/><name val="宋体"/><charset val="134"/></font>';
+    styles = styles.replace(/<fonts count="\d+"/, `<fonts count="${fontId + 1}"`).replace('</fonts>', `${font}</fonts>`);
+    const border = '<border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom><diagonal/></border>';
+    styles = styles.replace(/<borders count="\d+"/, `<borders count="${borderId + 1}"`).replace('</borders>', `${border}</borders>`);
+    const alignment = '<alignment horizontal="center" vertical="center"/>';
+    const formats = [0, 2].map(numFmtId => `<xf numFmtId="${numFmtId}" fontId="${fontId}" fillId="0" borderId="${borderId}" xfId="0" applyFont="1" applyNumberFormat="1" applyBorder="1" applyAlignment="1">${alignment}</xf>`).join('');
+    styles = styles.replace(/<cellXfs count="\d+"/, `<cellXfs count="${styleId + 2}"`).replace('</cellXfs>', `${formats}</cellXfs>`);
+    const sheet = decoder.decode(sheetFile.content).replace(/<c\b([^>]*)>/g, (_, attributes) => {
+      const address = attributes.match(/\br="([A-Z]+)(\d+)"/);
+      const numeric = address && address[1] === 'B' && Number(address[2]) >= 4;
+      return `<c${attributes.replace(/\s+s="\d+"/, '')} s="${styleId + (numeric ? 1 : 0)}">`;
+    });
+    stylesFile.content = encoder.encode(styles);
+    stylesFile.size = stylesFile.content.length;
+    sheetFile.content = encoder.encode(sheet);
+    sheetFile.size = sheetFile.content.length;
+    const blob = new Blob([XLSX.CFB.write(zip, { type: 'array', fileType: 'zip' })], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  return {
+    process,
+    load: async function(input) {
+      const file = input.files[0];
+      input.value = '';
+      if (!file) return;
+      if (!/\.(xlsx|csv)$/i.test(file.name)) return showToast('请导入 .xlsx 或 .csv 文件', 'error');
+      const status = document.getElementById('campusHoursStatus');
+      const pause = () => new Promise(resolve => setTimeout(resolve, 0));
+      this.reset();
+      const activeVersion = readVersion;
+      const section = document.getElementById('campusHoursSection');
+      const exportButtons = section.querySelectorAll('button.success');
+      exportButtons.forEach(button => { button.disabled = true; });
+      status.textContent = '正在读取课表…';
+      try {
+        const bytes = await file.arrayBuffer();
+        if (activeVersion !== readVersion) return;
+        status.textContent = '正在解析文件…';
+        await pause();
+        if (activeVersion !== readVersion) return;
+        const wb = XLSX.read(new Uint8Array(bytes), { type: 'array', cellDates: true });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const rows = [];
+        const range = sheet['!ref'] ? XLSX.utils.decode_range(sheet['!ref']) : null;
+        for (let start = range ? range.s.r : 0; range && start <= range.e.r; start += 500) {
+          if (activeVersion !== readVersion) return;
+          status.textContent = `正在读取数据 ${Math.min(start + 500, range.e.r + 1)} / ${range.e.r + 1}…`;
+          await pause();
+          if (activeVersion !== readVersion) return;
+          const batch = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', blankrows: true, range: { s: { r: start, c: range.s.c }, e: { r: Math.min(start + 499, range.e.r), c: range.e.c } } });
+          rows.push(...batch);
+        }
+        const steps = processRows(rows);
+        let step;
+        do {
+          if (activeVersion !== readVersion) return;
+          step = steps.next();
+          if (!step.done) {
+            status.textContent = `正在查重和统计 ${step.value} / ${Math.max(0, rows.length - 1)}…`;
+            await pause();
+          }
+        } while (!step.done);
+        const result = step.value;
+        showToast(`课时统计完成：有效${result.valid}条，异常${result.anomalies}条`, result.anomalies ? 'warning' : 'success');
+      } catch (error) {
+        if (activeVersion !== readVersion) return;
+        this.reset();
+        showToast('课时统计导入失败：' + error.message, 'error');
+      } finally {
+        if (activeVersion === readVersion) exportButtons.forEach(button => { button.disabled = false; });
+      }
+    },
+    export: function(mode) {
+      if (!importInfo) return showToast('请先在校区课时统计区域导入课表', 'error');
+      const label = { all: '全部', science: '理科', english: '英语' }[mode];
+      if (!label) return;
+      const teachers = new Set(TeacherListApp.getAllScienceTeachers().map(name => name.trim()));
+      const selected = item => mode === 'all' || teachers.has(item.row[head.indexOf('教师')]) === (mode === 'science');
+      const rows = valid.filter(selected).slice().sort((a, b) => {
+        const date = head.indexOf('上课日期'), time = head.indexOf('起始时间');
+        return a.row[date].localeCompare(b.row[date]) || a.row[time].localeCompare(b.row[time]);
+      });
+      const errors = anomalies.filter(selected);
+      if (!rows.length && !errors.length) return showToast(`没有可导出的${label}课程`, 'info');
+      const keepColumns = head.map((name, i) => ({ name, i })).filter(col => !/上课反馈|作业布置|作业情况/.test(col.name));
+      const exportHead = keepColumns.map(col => col.name);
+      const startCol = keepColumns.findIndex(col => col.name === '起始时间');
+      const endCol = keepColumns.findIndex(col => col.name === '结束时间');
+      const durationCol = exportHead.length, hoursCol = durationCol + 1;
+      const detail = XLSX.utils.aoa_to_sheet([[...exportHead, '上课时长', '总课时'], ...rows.map(item => keepColumns.map(col => {
+        if (col.name === '起始时间' || col.name === '结束时间') return timeSeconds(item.row[col.i]) / 86400;
+        return item.row[col.i];
+      }))]);
+      const cell = (col, row) => XLSX.utils.encode_cell({ c: col, r: row });
+      rows.forEach((item, i) => {
+        const r = i + 1;
+        [startCol, endCol].forEach(c => { detail[cell(c, r)].z = 'hh:mm:ss'; });
+        detail[cell(durationCol, r)] = { t: 'n', f: `${cell(endCol, r)}-${cell(startCol, r)}`, v: item.seconds / 86400, z: '[h]:mm:ss' };
+        detail[cell(hoursCol, r)] = { t: 'n', f: `${cell(durationCol, r)}/TIME(0,45,0)`, v: item.seconds / 2700, z: '0.00' };
+      });
+      detail['!ref'] = `A1:${cell(hoursCol, rows.length)}`;
+      detail['!cols'] = [...keepColumns.map(col => ({ wch: col.name === '科目' || col.name === '阶段' ? 24 : 16 })), { wch: 16 }, { wch: 14 }];
+      detail['!autofilter'] = { ref: detail['!ref'] };
+      const entries = summarize(rows);
+      const summary = XLSX.utils.aoa_to_sheet([
+        [mode === 'all' ? '各校区课时统计' : `${label}校区排课课时统计`],
+        ['日期范围', `${importInfo.start || '未填写'} 至 ${importInfo.end || '未填写'}`],
+        ['校区', '总课时'],
+        ...entries.map(entry => [entry.campus, entry.seconds / 2700])
+      ]);
+      const campusColumn = XLSX.utils.encode_col(keepColumns.findIndex(col => col.name === '校区'));
+      const durationColumn = XLSX.utils.encode_col(durationCol);
+      entries.forEach((entry, i) => {
+        const n = i + 4;
+        const lastDetailRow = rows.length + 1;
+        const isTotal = i === entries.length - 1;
+        if (rows.length) {
+          summary[`B${n}`].f = isTotal ? (i ? `SUM(B4:B${n - 1})` : '0') : `SUMIF('课程明细'!$${campusColumn}$2:$${campusColumn}$${lastDetailRow},A${n},'课程明细'!$${durationColumn}$2:$${durationColumn}$${lastDetailRow})/TIME(0,45,0)`;
+        }
+        summary[`B${n}`].z = '0.00';
+      });
+      summary.B1 = { t: 's', v: '' };
+      summary['!cols'] = [{ wch: 32 }, { wch: 32 }];
+      summary['!rows'] = Array.from({ length: entries.length + 3 }, (_, i) => ({ hpt: i === 0 ? 24 : 20 }));
+      summary['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }];
+      const anomalySheet = XLSX.utils.aoa_to_sheet([['原表行号', ...exportHead, '异常原因'], ...errors.map(item => [item.sourceRow, ...keepColumns.map(col => item.row[col.i]), item.reason])]);
+      anomalySheet['!cols'] = [{ wch: 12 }, ...keepColumns.map(() => ({ wch: 18 })), { wch: 36 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, summary, '校区汇总');
+      XLSX.utils.book_append_sheet(wb, detail, '课程明细');
+      XLSX.utils.book_append_sheet(wb, anomalySheet, '异常记录');
+      wb.Workbook = { CalcPr: { calcMode: 'auto', fullCalcOnLoad: true } };
+      download(wb, `校区课时统计_${label}_${importInfo.start || ''}_${importInfo.end || ''}.xlsx`);
+      render();
+      showToast(`${label}导出成功：有效${rows.length}条，异常${errors.length}条`, 'success');
+    },
+    reset: function() {
+      readVersion++;
+      head = []; valid = []; anomalies = []; importInfo = null;
+      document.getElementById('campusHoursFile').value = '';
+      document.getElementById('campusHoursSection').querySelectorAll('button.success').forEach(button => { button.disabled = false; });
+      render();
     }
   };
 })();
