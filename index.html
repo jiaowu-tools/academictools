@@ -6260,6 +6260,7 @@ const CampusHoursApp = (function() {
       if (/培训|虚拟|教师/.test(teacher)) reason = '虚拟教师';
       else if (/G类|G型/.test(type)) reason = 'G类（督导）';
       else if (/S类|S型/.test(type)) reason = 'S类';
+      else if (/D类|D型/.test(type)) reason = 'D类';
       else if (/orientation/i.test(subject) || /^ori$/i.test(subject)) reason = 'Ori';
       else if (subject.includes('模考')) reason = '模考';
       if (reason) {
