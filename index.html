@@ -2,10 +2,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>教务工具集</title>
-<!-- @version 0.0.1：按 0.0.9 → 0.0.10 → 0.1.0 递增，0.10.10 → 1.0.0。 -->
-<meta name="edu-tools-version" content="0.0.1">
+<!-- @version 0.0.2：按 0.0.9 → 0.0.10 → 0.1.0 递增，0.10.10 → 1.0.0。 -->
+<meta name="edu-tools-version" content="0.0.2">
 <meta name="edu-tools-release-date" content="2026-10-22">
-<meta name="edu-tools-release-notes" content="新增版本信息、线上更新检查和刷新更新入口。">
+<meta name="edu-tools-release-notes" content="版本入口融入右侧时间卡，采用圆润爪印胶囊和版本面板。">
 <meta name="theme-color" content="#0e5a43">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -10303,14 +10303,21 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 <!-- === FIGMA BUILT HOME END === -->
 <!-- ========== 工具集版本信息 ========== -->
-<style>
-#eduRelease { position: fixed; left: 16px; bottom: 12px; z-index: 20000; font: 12px/1.6 'Microsoft YaHei', sans-serif; color: #475569; }
-#eduRelease button { font: inherit; cursor: pointer; border: 1px solid #d9e5df; border-radius: 12px; padding: 7px 12px; color: #356354; background: #f4faf6; }
+<style id="eduReleaseStyles">
+#eduRelease { position: fixed; right: 24px; top: 14px; z-index: 20000; font: 12px/1.6 'Microsoft YaHei', sans-serif; color: #475569; }
+#eduRelease button, #eduReleasePanel button { font: inherit; cursor: pointer; border: 2px solid #ffffff; border-radius: 999px; padding: 7px 12px; color: #547a62; background: #edf7f0; }
 #eduRelease button:disabled { cursor: wait; opacity: .65; }
-#eduReleaseToggle { display: grid; text-align: left; box-shadow: 0 3px 12px #33415512; max-width: calc(100vw - 32px); }
+#eduReleaseToggle { display: inline-flex; align-items: center; gap: 7px; text-align: left; box-shadow: 0 0 0 3px #dce9de66, inset 0 1px 2px #fff; max-width: calc(100vw - 32px); }
+#eduReleaseToggle strong { font-weight: 500; }
+#eduReleaseBadge { display: none; }
+#eduRelease[data-state="new"] #eduReleaseVersion { display: none; }
+#eduRelease[data-state="new"] #eduReleaseBadge { display: inline; }
+#eduRelease.in-time-card { position: absolute; top: auto; right: 14px; bottom: 7px; margin: 0; padding: 0; border: 0; width: auto; text-align: center; z-index: 60; }
+#eduRelease.in-time-card #eduReleaseToggle { padding: 4px 9px; font-size: 11px; box-shadow: 0 0 0 2px #dce9de66, inset 0 1px 2px #fff; }
 #eduRelease[data-state="new"] #eduReleaseToggle { background: #fff2dc; color: #8a560f; border-color: #ead1a5; }
-#eduReleasePanel { position: absolute; left: 0; bottom: calc(100% + 10px); width: min(320px, calc(100vw - 32px)); box-sizing: border-box; padding: 18px; border: 1px solid #dce7e0; border-radius: 20px; background: #fffffff5; box-shadow: 0 12px 36px #33415526; }
+#eduReleasePanel { position: fixed; right: 24px; top: 64px; width: min(300px, calc(100vw - 32px)); box-sizing: border-box; padding: 20px; border: 2px solid #ffffff; border-radius: 30px; background: #f5f8fa; box-shadow: 8px 12px 26px #33415526; text-align: left; z-index: 20001; }
 #eduReleasePanel[hidden], #eduReleaseUpdate[hidden] { display: none; }
+#eduReleasePanel { font: 12px/1.6 'Microsoft YaHei', sans-serif; color: #475569; }
 #eduReleasePanel p { margin: 8px 0; overflow-wrap: anywhere; }
 #eduReleasePanel h2 { font-size: 16px; margin: 0 0 8px; color: #36594c; }
 #eduReleaseStatus { color: #64748b; }
@@ -10318,11 +10325,12 @@ document.addEventListener('DOMContentLoaded', function() {
 </style>
 <div id="eduRelease" data-state="idle">
   <button id="eduReleaseToggle" type="button" aria-expanded="false" aria-controls="eduReleasePanel" title="查看版本和检查更新">
+    <span aria-hidden="true">🐾</span>
     <strong id="eduReleaseVersion"></strong>
     <span id="eduReleaseBadge" aria-live="polite">尚未检查更新</span>
   </button>
   <section id="eduReleasePanel" aria-label="工具集版本信息" hidden>
-    <h2>版本信息</h2>
+    <h2>🐾 版本小记</h2>
     <p id="eduReleaseDate"></p>
     <p id="eduReleaseNotes"></p>
     <p id="eduReleaseStatus" role="status"></p>
@@ -10406,13 +10414,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
 
-  document.getElementById('eduReleaseVersion').textContent = '教务工具集 v' + SCRIPT_VERSION;
+  document.getElementById('eduReleaseVersion').textContent = 'v' + SCRIPT_VERSION;
   document.getElementById('eduReleaseDate').textContent = '本版日期：' + document.querySelector('meta[name="edu-tools-release-date"]').content;
   document.getElementById('eduReleaseNotes').textContent = document.querySelector('meta[name="edu-tools-release-notes"]').content;
   update.textContent = isPublishedPage ? '刷新更新' : '打开在线新版';
   toggle.addEventListener('click', () => setReleasePanel(panel.hidden));
   document.getElementById('eduReleaseClose').addEventListener('click', () => { setReleasePanel(false); toggle.focus(); });
-  root.addEventListener('keydown', event => {
+  panel.addEventListener('keydown', event => {
     if (event.key === 'Escape') { setReleasePanel(false); toggle.focus(); }
   });
   check.addEventListener('click', checkRelease);
@@ -10424,6 +10432,49 @@ document.addEventListener('DOMContentLoaded', function() {
     location.assign(target.href);
   });
   checkRelease();
+})();
+</script>
+<script>
+(() => {
+  const root = document.getElementById('eduRelease');
+  const panel = document.getElementById('eduReleasePanel');
+  const frame = document.getElementById('figmaBuiltHomeFrame');
+  let homeObserver;
+  function placeRelease() {
+    const home = document.body.classList.contains('home-mode');
+    const doc = frame.contentDocument;
+    const clock = doc && doc.querySelector('.edu-right-rail > .clay-panel');
+    if (home && clock) {
+      clock.style.setProperty('min-height', '220px', 'important');
+      clock.style.setProperty('flex-shrink', '0', 'important');
+      if (!doc.getElementById('eduReleaseStyles')) doc.head.appendChild(document.getElementById('eduReleaseStyles').cloneNode(true));
+      if (root.parentNode !== clock) clock.appendChild(root);
+      root.classList.add('in-time-card');
+      if (panel.ownerDocument !== doc || panel.parentNode !== doc.body) doc.body.appendChild(panel);
+    } else {
+      if (root.parentNode !== document.body) document.body.appendChild(root);
+      root.classList.remove('in-time-card');
+      if (panel.parentNode !== root) root.appendChild(panel);
+    }
+    const bounds = root.getBoundingClientRect();
+    panel.style.top = Math.min(bounds.bottom + 12, Math.max(16, root.ownerDocument.defaultView.innerHeight - 300)) + 'px';
+    panel.style.right = '24px';
+  }
+  function watchHome() {
+    if (homeObserver) homeObserver.disconnect();
+    if (frame.contentDocument && frame.contentDocument.body) {
+      homeObserver = new MutationObserver(() => {
+        if (document.body.classList.contains('home-mode') && !root.classList.contains('in-time-card')) placeRelease();
+      });
+      homeObserver.observe(frame.contentDocument.body, { childList: true, subtree: true });
+    }
+    placeRelease();
+  }
+  frame.addEventListener('load', watchHome);
+  new MutationObserver(placeRelease).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+  document.getElementById('eduReleaseToggle').addEventListener('click', placeRelease);
+  window.addEventListener('resize', placeRelease);
+  watchHome();
 })();
 </script>
 </body>
