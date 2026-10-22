@@ -2,6 +2,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>教务工具集</title>
+<!-- @version 0.0.1：按 0.0.9 → 0.0.10 → 0.1.0 递增，0.10.10 → 1.0.0。 -->
+<meta name="edu-tools-version" content="0.0.1">
+<meta name="edu-tools-release-date" content="2026-10-22">
+<meta name="edu-tools-release-notes" content="新增版本信息、线上更新检查和刷新更新入口。">
 <meta name="theme-color" content="#0e5a43">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -10298,5 +10302,129 @@ document.addEventListener('DOMContentLoaded', function() {
 })();
 </script>
 <!-- === FIGMA BUILT HOME END === -->
+<!-- ========== 工具集版本信息 ========== -->
+<style>
+#eduRelease { position: fixed; left: 16px; bottom: 12px; z-index: 20000; font: 12px/1.6 'Microsoft YaHei', sans-serif; color: #475569; }
+#eduRelease button { font: inherit; cursor: pointer; border: 1px solid #d9e5df; border-radius: 12px; padding: 7px 12px; color: #356354; background: #f4faf6; }
+#eduRelease button:disabled { cursor: wait; opacity: .65; }
+#eduReleaseToggle { display: grid; text-align: left; box-shadow: 0 3px 12px #33415512; max-width: calc(100vw - 32px); }
+#eduRelease[data-state="new"] #eduReleaseToggle { background: #fff2dc; color: #8a560f; border-color: #ead1a5; }
+#eduReleasePanel { position: absolute; left: 0; bottom: calc(100% + 10px); width: min(320px, calc(100vw - 32px)); box-sizing: border-box; padding: 18px; border: 1px solid #dce7e0; border-radius: 20px; background: #fffffff5; box-shadow: 0 12px 36px #33415526; }
+#eduReleasePanel[hidden], #eduReleaseUpdate[hidden] { display: none; }
+#eduReleasePanel p { margin: 8px 0; overflow-wrap: anywhere; }
+#eduReleasePanel h2 { font-size: 16px; margin: 0 0 8px; color: #36594c; }
+#eduReleaseStatus { color: #64748b; }
+#eduReleaseActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+</style>
+<div id="eduRelease" data-state="idle">
+  <button id="eduReleaseToggle" type="button" aria-expanded="false" aria-controls="eduReleasePanel" title="查看版本和检查更新">
+    <strong id="eduReleaseVersion"></strong>
+    <span id="eduReleaseBadge" aria-live="polite">尚未检查更新</span>
+  </button>
+  <section id="eduReleasePanel" aria-label="工具集版本信息" hidden>
+    <h2>版本信息</h2>
+    <p id="eduReleaseDate"></p>
+    <p id="eduReleaseNotes"></p>
+    <p id="eduReleaseStatus" role="status"></p>
+    <div id="eduReleaseActions">
+      <button id="eduReleaseCheck" type="button">检查更新</button>
+      <button id="eduReleaseUpdate" type="button" hidden>刷新更新</button>
+      <button id="eduReleaseClose" type="button">收起</button>
+    </div>
+  </section>
+</div>
+<script>
+(() => {
+  const SCRIPT_VERSION = document.querySelector('meta[name="edu-tools-version"]').content;
+  const RELEASE_URL = 'https://jiaowu-tools.github.io/academictools/';
+  const root = document.getElementById('eduRelease');
+  const toggle = document.getElementById('eduReleaseToggle');
+  const panel = document.getElementById('eduReleasePanel');
+  const badge = document.getElementById('eduReleaseBadge');
+  const status = document.getElementById('eduReleaseStatus');
+  const check = document.getElementById('eduReleaseCheck');
+  const update = document.getElementById('eduReleaseUpdate');
+  let checking = false;
+  const isPublishedPage = location.origin === new URL(RELEASE_URL).origin &&
+    (location.pathname === '/academictools/' || location.pathname === '/academictools/index.html');
+
+  function compareReleaseVersions(left, right) {
+    const a = left.split('.').map(Number);
+    const b = right.split('.').map(Number);
+    for (let index = 0; index < 3; index += 1) {
+      if (a[index] !== b[index]) return a[index] > b[index] ? 1 : -1;
+    }
+    return 0;
+  }
+
+  function showReleaseState(state, label, detail) {
+    root.dataset.state = state;
+    badge.textContent = label;
+    status.textContent = detail;
+    update.hidden = state !== 'new';
+  }
+
+  function setReleasePanel(open) {
+    panel.hidden = !open;
+    toggle.setAttribute('aria-expanded', String(open));
+  }
+
+  async function checkRelease() {
+    if (checking) return;
+    checking = true;
+    check.disabled = true;
+    showReleaseState('checking', '正在检查更新…', '正在读取线上已发布版本…');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+    try {
+      const url = new URL(RELEASE_URL);
+      url.searchParams.set('_edu_check', Date.now());
+      const response = await fetch(url.href, { cache: 'no-store', credentials: 'omit', signal: controller.signal });
+      if (!response.ok) throw new Error('HTTP ' + response.status);
+      const online = new DOMParser().parseFromString(await response.text(), 'text/html');
+      const version = online.querySelector('meta[name="edu-tools-version"]')?.content;
+      if (!version || !/^\d+\.\d+\.\d+$/.test(version)) {
+        showReleaseState('unmarked', '线上版本尚未标记', '线上页面还没有版本信息，暂时无法判断是否最新；发布带版本号的页面后即可比较。');
+        return;
+      }
+      const comparison = compareReleaseVersions(version, SCRIPT_VERSION);
+      const checkedAt = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+      if (comparison > 0) {
+        const notes = online.querySelector('meta[name="edu-tools-release-notes"]')?.content;
+        showReleaseState('new', '发现新版 v' + version, '线上最新：v' + version + (notes ? '。' + notes : '') + '（检查于 ' + checkedAt + '）');
+      } else if (comparison === 0) {
+        showReleaseState('current', '已是最新版本', '与线上已发布版本一致（检查于 ' + checkedAt + '）。');
+      } else {
+        showReleaseState('ahead', '本版高于线上版本', '线上当前为 v' + version + '，本版 v' + SCRIPT_VERSION + ' 尚未在线上发布（检查于 ' + checkedAt + '）。');
+      }
+    } catch (error) {
+      showReleaseState('failed', '检查失败，请重试', '暂时无法确认是否最新，请检查网络后重试。');
+    } finally {
+      clearTimeout(timeout);
+      checking = false;
+      check.disabled = false;
+    }
+  }
+
+  document.getElementById('eduReleaseVersion').textContent = '教务工具集 v' + SCRIPT_VERSION;
+  document.getElementById('eduReleaseDate').textContent = '本版日期：' + document.querySelector('meta[name="edu-tools-release-date"]').content;
+  document.getElementById('eduReleaseNotes').textContent = document.querySelector('meta[name="edu-tools-release-notes"]').content;
+  update.textContent = isPublishedPage ? '刷新更新' : '打开在线新版';
+  toggle.addEventListener('click', () => setReleasePanel(panel.hidden));
+  document.getElementById('eduReleaseClose').addEventListener('click', () => { setReleasePanel(false); toggle.focus(); });
+  root.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { setReleasePanel(false); toggle.focus(); }
+  });
+  check.addEventListener('click', checkRelease);
+  update.addEventListener('click', () => {
+    if (!confirm('更新将重新打开页面。请先保存未完成的操作或导出结果，确定继续吗？')) return;
+    const target = new URL(isPublishedPage ? location.href : RELEASE_URL);
+    target.searchParams.set('_edu_update', Date.now());
+    if (!isPublishedPage) target.hash = location.hash;
+    location.assign(target.href);
+  });
+  checkRelease();
+})();
+</script>
 </body>
 </html>
