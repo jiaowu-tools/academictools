@@ -6217,7 +6217,7 @@ const CampusHoursApp = (function() {
       return;
     }
     const detail = Object.entries(importInfo.excluded).map(([name, count]) => `${name}${count}条`).join('、');
-    status.textContent = `日期范围：${importInfo.start || '未填写'} 至 ${importInfo.end || '未填写'}；原始${importInfo.original}条，删除重复${importInfo.duplicates}条，清理${importInfo.cleaned}条（${detail || '无'}），异常${anomalies.length}条，有效${valid.length}条。`;
+    status.textContent = `日期范围：${importInfo.start || '未填写'} 至 ${importInfo.end || '未填写'}；原始${importInfo.original}条，清理${importInfo.cleaned}条（${detail || '无'}），异常${anomalies.length}条，有效${valid.length}条。`;
     function appendRow(body, values) {
       const tr = document.createElement('tr');
       values.forEach(value => {
@@ -6236,12 +6236,9 @@ const CampusHoursApp = (function() {
     const missing = [...KEY_COLUMNS, '课程类型'].filter(name => !nextHead.includes(name));
     if (missing.length) throw new Error(`缺少列：${missing.join('、')}`);
     const nextValid = [], nextAnomalies = [], excluded = {};
-    const seen = new Set();
     let firstDate = '', lastDate = '';
-    let original = 0, duplicates = 0, cleaned = 0;
+    let original = 0, cleaned = 0;
     const index = Object.fromEntries(nextHead.map((name, i) => [name, i]));
-    const oneIndices = KEY_COLUMNS.map(name => index[name]);
-    const groupIndices = oneIndices.slice(1);
     for (let offset = 0; offset < sheetRows.length - 1; offset++) {
       if (offset % 500 === 0) yield offset;
       const source = sheetRows[offset + 1];
@@ -6258,10 +6255,6 @@ const CampusHoursApp = (function() {
       const date = row[index['上课日期']];
       if (date && (!firstDate || date < firstDate)) firstDate = date;
       if (date && (!lastDate || date > lastDate)) lastDate = date;
-      const one = /单人|一对一|一人班/.test(row[index['班级类型']]);
-      const key = JSON.stringify((one ? oneIndices : groupIndices).map(i => row[i]));
-      if (seen.has(key)) { duplicates++; continue; }
-      seen.add(key);
       const teacher = row[index['教师']], type = row[index['课程类型']] || '', subject = row[index['科目']];
       let reason = '';
       if (/培训|虚拟|教师/.test(teacher)) reason = '虚拟教师';
@@ -6279,14 +6272,13 @@ const CampusHoursApp = (function() {
       if (start === null || end === null || end < start) {
         nextAnomalies.push({ row, sourceRow: offset + 2, reason: start === null || end === null ? '起始或结束时间缺失/格式无效' : '结束时间早于起始时间' });
       } else {
-        if (row[index['班级类型']].includes('多人')) row[index['姓名']] = '';
         nextValid.push({ row, seconds: end - start });
       }
     }
     head = nextHead;
     valid = nextValid;
     anomalies = nextAnomalies;
-    importInfo = { original, duplicates, cleaned, excluded, start: firstDate, end: lastDate };
+    importInfo = { original, cleaned, excluded, start: firstDate, end: lastDate };
     render();
     return { ...importInfo, valid: valid.length, anomalies: anomalies.length };
   }
@@ -6374,7 +6366,7 @@ const CampusHoursApp = (function() {
           if (activeVersion !== readVersion) return;
           step = steps.next();
           if (!step.done) {
-            status.textContent = `正在查重和统计 ${step.value} / ${Math.max(0, rows.length - 1)}…`;
+            status.textContent = `正在统计 ${step.value} / ${Math.max(0, rows.length - 1)}…`;
             await pause();
           }
         } while (!step.done);
