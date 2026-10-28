@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.6.9
+// @version      1.6.10
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.6.9';
+  const SCRIPT_VERSION = '1.6.10';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -1601,7 +1601,7 @@
             <div class="ccheck-teacher-list" id="ccheck-meeting-teachers">
               <div class="ccheck-empty">扫描后显示老师。</div>
             </div>
-            <small class="ccheck-muted">不计算：12:20-13:15；上一节课/会议结束后空 5 分钟。</small>
+            <small class="ccheck-muted">不计算：12:20-13:15；课/会议前后各空 5 分钟。线上可异地参会，通勤可提前或延后安排，须留足完整时间。</small>
             <div class="ccheck-meeting-results" id="ccheck-meeting-results"></div>
           </div>
         </div>
@@ -8013,6 +8013,10 @@
         run: assertSelfTestMeetingSupervisorShiftDisplay
       },
       {
+        name: '排会议：混合参会允许提前通勤，紧凑跨校区仍不可排',
+        run: assertSelfTestFlexibleMeetingCommute
+      },
+      {
         name: '督导：F 灵活班和老师阻塞共同空档',
         run: assertSelfTestSupervisorMixedSlots
       },
@@ -9756,6 +9760,73 @@
     } finally {
       state.supervisorPlanner = previousPlanner;
     }
+  }
+
+  function assertSelfTestFlexibleMeetingCommute() {
+    const date = '2026-11-02';
+    const settings = {
+      dates: [date], durationMinutes: 45, meetingMode: 'any',
+      windowStartMinutes: CONFIG.meetingWindowStartMinutes,
+      windowEndMinutes: CONFIG.meetingWindowEndMinutes,
+      excludedRanges: CONFIG.meetingExcludedRanges.slice()
+    };
+    const events = [
+      { teacher: '方卉', text: '赵梓彤 SAT巅峰阅读', campus: '紫金港校区', hex: '#B290FE', startMinutes: 640, endMinutes: 685 },
+      { teacher: '方卉', text: '赵梓彤 SAT巅峰阅读', campus: '紫金港校区', hex: '#B290FE', startMinutes: 690, endMinutes: 735 },
+      { teacher: '方卉', text: 'SAT强化文法培训', campus: '线上', courseCampus: '城建校区', hex: '#FFAFDE', type: 'online', startMinutes: 995, endMinutes: 1040 },
+      { teacher: '张宁', text: '张宁11.2上午空出', campus: '线上', hex: '#FFAFDE', type: 'online', startMinutes: 540, endMinutes: 735 },
+      { teacher: '张宁', text: '杜伟豪 PRE词汇课', campus: '钱江校区', hex: '#FB5757', startMinutes: 895, endMinutes: 940 },
+      { teacher: '沈豪杰', text: '魏锦 AS物理', campus: '钱江校区', hex: '#FB5757', startMinutes: 795, endMinutes: 840 },
+      { teacher: '沈豪杰', text: '魏锦 AS物理', campus: '钱江校区', hex: '#FB5757', startMinutes: 845, endMinutes: 890 }
+    ].map((event, index) => makeSelfTestCourseEvent({ ...event, date, key: `flexible-original-${index}` }));
+    const originalEvents = JSON.stringify(events);
+    const teachers = ['张宁', '沈豪杰', '方卉'];
+    const slots = mergeDisplayMeetingSlots(expandMeetingModeSettings(settings)
+      .flatMap((mode) => buildFullMeetingSlots(events, teachers, mode)), events, teachers, settings);
+    if (!slots.some((slot) => slot.startMinutes <= 945 && slot.endMinutes >= 990)) {
+      throw new Error('原始三人课表应显示 11.2 15:45-16:30，允许方卉提前通勤后在城建线上参会');
+    }
+    if (!slots.flatMap((slot) => buildMeetingDraftSlotOptions(slot, settings))
+      .some((slot) => slot.startMinutes === 945 && slot.endMinutes === 990)) {
+      throw new Error('原始三人课表必须能生成 15:45-16:30 会议草稿');
+    }
+    const offlineSlots = buildOfflineMeetingSlots(events, teachers, { ...settings, meetingMode: 'offline' });
+    if (offlineSlots.some((slot) => slot.startMinutes <= 945 && slot.endMinutes >= 990)) {
+      throw new Error('全员线下仍须同校区到场，不能把异地线上参会当作全员线下');
+    }
+    const onlineSettings = { ...settings, meetingMode: 'online' };
+    const tight = [
+      makeSelfTestCourseEvent({ date, campus: '紫金港校区', hex: '#B290FE', startMinutes: 795, endMinutes: 840 }),
+      makeSelfTestCourseEvent({ date, campus: '钱江校区', hex: '#FB5757', startMinutes: 895, endMinutes: 940 })
+    ];
+    const tightSlots = mergeDisplayMeetingSlots(buildOnlineMeetingSlots(tight, ['测试老师'], onlineSettings), tight, ['测试老师'], onlineSettings);
+    if (tightSlots.some((slot) => intervalsOverlap(slot.startMinutes, slot.endMinutes, 845, 890))) {
+      throw new Error('13:15 紫金港课程、14:55 钱江课程之间，14:05 不可排会议');
+    }
+    const gapEvents = [
+      makeSelfTestCourseEvent({ date, campus: '紫金港校区', hex: '#B290FE', startMinutes: 540, endMinutes: 600 }),
+      makeSelfTestCourseEvent({ date, campus: '钱江校区', hex: '#FB5757', startMinutes: 840, endMinutes: 885 })
+    ];
+    const gapSettings = { ...onlineSettings, excludedRanges: [], durationMinutes: 95 };
+    const gapSlots = mergeDisplayMeetingSlots(buildOnlineMeetingSlots(gapEvents, ['测试老师'], gapSettings), gapEvents, ['测试老师'], gapSettings);
+    for (let start = 605; start + 95 <= 835; start += 5) {
+      const canTravel = start - 605 >= 90 || 835 - (start + 95) >= 90;
+      const displayed = gapSlots.some((slot) => start >= slot.startMinutes && start + 95 <= slot.endMinutes);
+      if (displayed !== canTravel) throw new Error(`通勤必须能完整放在会议前或后，${formatMinutes(start)} 的结果错误`);
+    }
+    gapSlots.flatMap((slot) => buildMeetingDraftSlotOptions(slot, gapSettings)).forEach((slot) => {
+      if (slot.startMinutes - 605 < 90 && 835 - slot.endMinutes < 90) {
+        throw new Error('展示合并与会议草稿不得重新引入通勤不足的候选');
+      }
+    });
+    const fragmented = gapEvents.concat(makeSelfTestCourseEvent({
+      date, type: 'online', campus: '虚拟校区', hex: '#7F91F5', startMinutes: 680, endMinutes: 760
+    }));
+    const fragmentedSlots = buildOnlineMeetingSlots(fragmented, ['测试老师'], onlineSettings);
+    if (fragmentedSlots.some((slot) => intervalsOverlap(slot.startMinutes, slot.endMinutes, 605, 835))) {
+      throw new Error('已有线上占用分割空档时，不得把碎片相加作为完整通勤');
+    }
+    if (JSON.stringify(events) !== originalEvents) throw new Error('排会议计算不得改写原始课表事件');
   }
 
   function assertSelfTestSupervisorMixedSlots() {
@@ -13553,10 +13624,9 @@
         blockers.map((event) => eventToMeetingInterval(event, settings))
           .filter(Boolean)
           .concat(getMeetingExcludedIntervals(settings))
-          .concat(getOnlineMeetingCommuteIntervals(events, teachers, date, settings))
       );
       const freeRanges = invertMeetingIntervals(intervals, settings);
-      return freeRanges
+      return restrictOnlineMeetingCommuteRanges(freeRanges, events, teachers, date, settings)
         .filter((range) => range.endMinutes - range.startMinutes >= settings.durationMinutes)
         .map((range) => ({
           date,
@@ -13567,7 +13637,10 @@
     });
   }
 
-  function getOnlineMeetingCommuteIntervals(events, teachers, date, settings) {
+  function restrictOnlineMeetingCommuteRanges(ranges, events, teachers, date, settings) {
+    const duration = settings.durationMinutes;
+    let starts = ranges.filter((range) => range.endMinutes - range.startMinutes >= duration)
+      .map((range) => ({ startMinutes: range.startMinutes, endMinutes: range.endMinutes - duration }));
     const teacherSet = new Set(teachers);
     const byTeacher = new Map();
 
@@ -13578,32 +13651,45 @@
       byTeacher.get(event.teacher).push(event);
     });
 
-    const intervals = [];
     byTeacher.forEach((teacherEvents) => {
       const sorted = teacherEvents.slice().sort(compareByTime);
       for (let index = 0; index < sorted.length - 1; index += 1) {
         const previous = sorted[index];
         const next = sorted[index + 1];
         const previousEndWithBuffer = getMeetingAfterEventLimitMinutes(previous);
-        if (next.startMinutes <= previousEndWithBuffer) continue;
+        const nextStartWithBuffer = getMeetingBeforeEventLimitMinutes(next);
+        if (nextStartWithBuffer <= previousEndWithBuffer) continue;
 
         const previousCampus = getCourseRealCampus(previous);
         const nextCampus = getCourseRealCampus(next);
         if (!previousCampus || !nextCampus || previousCampus === nextCampus) continue;
 
         const requiredMinutes = getCommuteMinutes(previousCampus, nextCampus);
-        if (requiredMinutes == null) {
-          intervals.push(clipMeetingInterval(previousEndWithBuffer, next.startMinutes, settings));
-          continue;
-        }
-        if (requiredMinutes <= 0) continue;
+        if (requiredMinutes === 0) continue;
 
-        const nextStartWithBuffer = getMeetingBeforeEventLimitMinutes(next);
-        intervals.push(clipMeetingInterval(nextStartWithBuffer - requiredMinutes, nextStartWithBuffer, settings));
+        // 午休不排会议，但可以通勤；已有课/会议及其缓冲不能用于通勤。
+        const travelSettings = { ...settings, windowStartMinutes: previousEndWithBuffer, windowEndMinutes: nextStartWithBuffer };
+        const occupied = mergeMeetingIntervals((events || [])
+          .filter((event) => event.teacher === previous.teacher && event.date === date && isFiniteMeetingTime(event))
+          .map((event) => eventToMeetingInterval(event, travelSettings)).filter(Boolean));
+        const travelRanges = requiredMinutes == null ? [] : invertMeetingIntervals(occupied, travelSettings)
+          .filter((range) => range.endMinutes - range.startMinutes >= requiredMinutes);
+        const earliestTravelEnd = travelRanges.length ? travelRanges[0].startMinutes + requiredMinutes : Infinity;
+        const latestTravelStart = travelRanges.length ? travelRanges[travelRanges.length - 1].endMinutes - requiredMinutes : -Infinity;
+
+        starts = starts.flatMap((range) => {
+          const alternatives = [
+            { startMinutes: range.startMinutes, endMinutes: Math.min(range.endMinutes, previousEndWithBuffer - duration) },
+            { startMinutes: Math.max(range.startMinutes, nextStartWithBuffer), endMinutes: range.endMinutes },
+            { startMinutes: Math.max(range.startMinutes, previousEndWithBuffer), endMinutes: Math.min(range.endMinutes, latestTravelStart - duration) },
+            { startMinutes: Math.max(range.startMinutes, earliestTravelEnd), endMinutes: Math.min(range.endMinutes, nextStartWithBuffer - duration) }
+          ].filter((item) => item.endMinutes >= item.startMinutes);
+          return mergeMeetingIntervals(alternatives);
+        });
       }
     });
 
-    return intervals.filter(Boolean);
+    return starts.map((range) => ({ startMinutes: range.startMinutes, endMinutes: range.endMinutes + duration }));
   }
 
   function buildOfflineMeetingSlots(events, teachers, settings) {
@@ -13848,6 +13934,9 @@
     });
 
     return merged.flatMap((slot) => subtractMeetingDisplayBlockers(slot, events, teachers, settings))
+      .flatMap((slot) => settings.meetingMode === 'offline' ? [slot]
+        : restrictOnlineMeetingCommuteRanges([slot], events, teachers, slot.date, settings)
+          .map((range) => ({ ...slot, ...range })))
       .filter((slot) => slot.endMinutes - slot.startMinutes >= settings.durationMinutes);
   }
 
