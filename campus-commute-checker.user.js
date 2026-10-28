@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.6.10
+// @version      1.7.0
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.6.10';
+  const SCRIPT_VERSION = '1.7.0';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -982,6 +982,12 @@
         justify-content: space-between;
         gap: 8px;
         font-weight: 700;
+      }
+
+      .ccheck-slot-card.ccheck-slot-coordination {
+        background: #fffbeb;
+        border-color: #fcd34d;
+        border-left-color: #f59e0b;
       }
 
       .ccheck-slot-date {
@@ -8013,6 +8019,10 @@
         run: assertSelfTestMeetingSupervisorShiftDisplay
       },
       {
+        name: '排会议：面试协调候选与直接空档分离，保留课程和通勤限制',
+        run: assertSelfTestInterviewCoordination
+      },
+      {
         name: '排会议：混合参会允许提前通勤，紧凑跨校区仍不可排',
         run: assertSelfTestFlexibleMeetingCommute
       },
@@ -9760,6 +9770,72 @@
     } finally {
       state.supervisorPlanner = previousPlanner;
     }
+  }
+
+  function assertSelfTestInterviewCoordination() {
+    const date = '2026-11-02';
+    const settings = {
+      dates: [date], durationMinutes: 45, meetingMode: 'any',
+      windowStartMinutes: 540, windowEndMinutes: 1090,
+      excludedRanges: CONFIG.meetingExcludedRanges.slice()
+    };
+    const interview = makeSelfTestCourseEvent({ date, key: 'interview-a', teacher: '张宁',
+      text: '英语教师面试 <测试>', type: 'online', campus: '线上', hex: '#FFAFDE', startMinutes: 945, endMinutes: 990 });
+    const secondInterview = { ...interview, key: 'interview-b', teacher: '方卉', text: '面试沟通' };
+    const otherInterview = { ...interview, key: 'interview-other', teacher: '其他老师', text: '无关面试' };
+    const course = makeSelfTestCourseEvent({ date, teacher: '方卉', text: '正式课程', startMinutes: 945, endMinutes: 990 });
+    const tight = [
+      makeSelfTestCourseEvent({ date, teacher: '方卉', campus: '紫金港校区', hex: '#B290FE', startMinutes: 795, endMinutes: 840 }),
+      makeSelfTestCourseEvent({ date, teacher: '方卉', campus: '钱江校区', hex: '#FB5757', startMinutes: 895, endMinutes: 940 }),
+      { ...secondInterview, startMinutes: 845, endMinutes: 890 }
+    ];
+    const cases = [
+      { events: [interview, secondInterview, otherInterview], start: 945, expected: 2 },
+      { events: [interview, course], start: 945, expected: 0 },
+      { events: [otherInterview], start: 945, expected: 0 },
+      { events: [{ ...interview, text: '业务例会' }], start: 945, expected: 0 },
+      { events: tight, start: 845, expected: 0 },
+      { events: [{ ...interview, startMinutes: 750, endMinutes: 795 }], start: 750, expected: 0 },
+      { events: [interview], start: 945, expected: 1, meetingMode: 'offline' }
+    ];
+    const teachers = ['张宁', '方卉'];
+    cases.forEach((item) => {
+      const caseSettings = { ...settings, meetingMode: item.meetingMode || settings.meetingMode };
+      const original = JSON.stringify(item.events);
+      const direct = mergeDisplayMeetingSlots(expandMeetingModeSettings(caseSettings)
+        .flatMap((mode) => buildFullMeetingSlots(item.events, teachers, mode)), item.events, teachers, caseSettings);
+      const coordinated = buildInterviewCoordinationSlots(item.events, teachers, caseSettings, direct);
+      const target = coordinated.find((slot) => slot.startMinutes <= item.start && slot.endMinutes >= item.start + 45);
+      if ((target?.coordinationEvents.length || 0) !== item.expected) {
+        throw new Error(`面试协调判定错误：${item.start}，预期 ${item.expected} 个需协调面试，实际 ${target?.coordinationEvents.length || 0}`);
+      }
+      coordinated.forEach((slot) => {
+        buildMeetingDraftSlotOptions(slot, caseSettings).forEach((option) => {
+          if (direct.some((range) => range.date === option.date && range.startMinutes <= option.startMinutes && range.endMinutes >= option.endMinutes)) {
+            throw new Error('协调候选不应重复列出直接可排的会议选项');
+          }
+        });
+      });
+      if (JSON.stringify(item.events) !== original) throw new Error('协调计算不得挪动或改写原面试记录');
+      if (item.expected === 2) {
+        if (direct.some((slot) => slot.startMinutes <= 945 && slot.endMinutes >= 990)) throw new Error('面试不能直接当作空闲');
+        const previousDocument = globalThis.document;
+        const result = { innerHTML: '', querySelectorAll: () => [] };
+        globalThis.document = { getElementById: (id) => id === 'ccheck-meeting-results' ? result : null };
+        try {
+          renderFullMeetingSlots([target], teachers, caseSettings);
+          if (!result.innerHTML.includes('协调后可排') || !result.innerHTML.includes('张宁')
+            || !result.innerHTML.includes('方卉') || !result.innerHTML.includes('15:45-16:30')
+            || !result.innerHTML.includes('&lt;测试&gt;') || result.innerHTML.includes('无关面试')
+            || result.innerHTML.includes('data-meeting-draft=')) {
+            throw new Error('协调卡片必须显示相关老师、原时间和安全转义的面试名称，且不能提供直接排会议入口');
+          }
+        } finally {
+          if (previousDocument === undefined) delete globalThis.document;
+          else globalThis.document = previousDocument;
+        }
+      }
+    });
   }
 
   function assertSelfTestFlexibleMeetingCommute() {
@@ -13284,12 +13360,13 @@
       selectedParticipants,
       settings
     );
-    if (slots.length) {
-      renderFullMeetingSlots(slots, selectedParticipants, settings);
+    const coordinationSlots = buildInterviewCoordinationSlots(plannerEvents, selectedParticipants, settings, slots);
+    if (slots.length || coordinationSlots.length) {
+      renderFullMeetingSlots(slots.concat(coordinationSlots), selectedParticipants, settings);
       const supervisorText = supervisorMerge.supervisors.length
         ? `，自动识别督导：${supervisorMerge.supervisors.map((supervisor) => supervisor.name).join('、')}`
         : '';
-      setStatus(`共同空档已找到 ${slots.length} 段可排时间${supervisorText}。`);
+      setStatus(`共同空档：${slots.length} 段直接可排，${coordinationSlots.length} 段协调后可排${supervisorText}。`);
       return;
     }
 
@@ -13880,13 +13957,67 @@
     return startA < endB && endA > startB;
   }
 
+  function buildInterviewCoordinationSlots(events, teachers, settings, directSlots) {
+    const teacherSet = new Set(teachers);
+    const interviews = events.filter((event) => teacherSet.has(event.teacher)
+      && String(event.text || '').includes('面试') && isFiniteMeetingTime(event));
+    if (!interviews.length) return [];
+    const interviewSet = new Set(interviews);
+    const fixedEvents = events.filter((event) => !interviewSet.has(event));
+    const modeSettings = { ...settings, meetingMode: settings.meetingMode === 'offline' ? 'offline' : 'online' };
+    const relaxedSlots = mergeDisplayMeetingSlots(
+      buildFullMeetingSlots(fixedEvents, teachers, modeSettings), fixedEvents, teachers, settings
+    );
+    const grouped = new Map();
+    relaxedSlots.forEach((slot) => {
+      const dateInterviews = interviews.filter((event) => event.date === slot.date);
+      if (!dateInterviews.length) return;
+      for (let start = Math.ceil(slot.startMinutes / 5) * 5; start + settings.durationMinutes <= slot.endMinutes; start += 5) {
+        const end = start + settings.durationMinutes;
+        if (directSlots.some((direct) => direct.date === slot.date && direct.startMinutes <= start && direct.endMinutes >= end)) continue;
+        const candidateSettings = { ...modeSettings, dates: [slot.date], windowStartMinutes: start, windowEndMinutes: end };
+        if (!buildFullMeetingSlots(fixedEvents, teachers, candidateSettings)
+          .some((candidate) => candidate.startMinutes <= start && candidate.endMinutes >= end)) continue;
+        let restoredEvents = fixedEvents;
+        const coordinationEvents = [];
+        dateInterviews.forEach((event) => {
+          const candidateEvents = restoredEvents.concat(event);
+          if (buildFullMeetingSlots(candidateEvents, teachers, candidateSettings)
+            .some((candidate) => candidate.startMinutes <= start && candidate.endMinutes >= end)) {
+            restoredEvents = candidateEvents;
+          } else {
+            coordinationEvents.push(event);
+          }
+        });
+        if (!coordinationEvents.length) continue;
+        const signature = `${slot.date}|${coordinationEvents.map((event) => interviews.indexOf(event)).join(',')}`;
+        if (!grouped.has(signature)) grouped.set(signature, new Map());
+        grouped.get(signature).set(start, { ...slot, startMinutes: start, endMinutes: end, coordinationEvents });
+      }
+    });
+    const result = [];
+    grouped.forEach((candidates) => {
+      let last = null;
+      Array.from(candidates.values()).sort((a, b) => a.startMinutes - b.startMinutes).forEach((candidate) => {
+        if (last && candidate.startMinutes === last.endMinutes - settings.durationMinutes + 5) {
+          last.endMinutes = candidate.endMinutes;
+        } else {
+          last = { ...candidate };
+          result.push(last);
+        }
+      });
+    });
+    return sortMeetingSlots(result);
+  }
+
   function renderFullMeetingSlots(slots, teachers, settings) {
     const result = document.getElementById('ccheck-meeting-results');
     if (!result) return;
     result.innerHTML = `
-      <span class="ccheck-muted">找到 ${slots.length} 段可排时间。</span>
+      <span class="ccheck-muted">直接可排 ${slots.filter((slot) => !slot.coordinationEvents?.length).length} 段；协调后可排 ${slots.filter((slot) => slot.coordinationEvents?.length).length} 段。</span>
+      ${slots.some((slot) => slot.coordinationEvents?.length) ? '<div class="ccheck-muted">名称含“面试”的占用可尝试沟通调整；黄色时段需先协调成功。</div>' : ''}
       ${slots.map((slot, index) => `
-        <div class="ccheck-slot-card">
+        <div class="ccheck-slot-card${slot.coordinationEvents?.length ? ' ccheck-slot-coordination' : ''}">
           <div class="ccheck-slot-title">
             <span class="ccheck-slot-date">
               <span>${escapeHtml(slot.date)}</span>
@@ -13894,9 +14025,11 @@
             </span>
             <span>${formatMinutes(slot.startMinutes)}-${formatMinutes(slot.endMinutes)}</span>
           </div>
+          <div class="ccheck-muted">${slot.coordinationEvents?.length ? '协调后可排（需先调整面试）' : '直接可排'}</div>
+          ${slot.coordinationEvents?.length ? `<div class="ccheck-muted">${slot.coordinationEvents.map((event) => escapeHtml(`${event.teacher}：${formatMinutes(event.startMinutes)}-${formatMinutes(event.endMinutes)} ${event.text}`)).join('<br>')}</div>` : ''}
           <div class="ccheck-slot-actions">
-            <button class="ccheck-locate" type="button" data-meeting-locate="${index}">定位可排</button>
-            <button class="ccheck-locate" type="button" data-meeting-draft="${index}">排会议草稿</button>
+            <button class="ccheck-locate" type="button" data-meeting-locate="${index}">${slot.coordinationEvents?.length ? '定位待协调' : '定位可排'}</button>
+            ${slot.coordinationEvents?.length ? '<small class="ccheck-muted">面试调整后，请重新扫描确认。</small>' : `<button class="ccheck-locate" type="button" data-meeting-draft="${index}">排会议草稿</button>`}
           </div>
         </div>
       `).join('')}
@@ -14096,8 +14229,9 @@
     }
 
     const marked = markVisibleMeetingSlot(teachers, slot, settings);
+    const availability = slot.coordinationEvents?.length ? '协调后可排，须先调整面试' : '可排';
     setStatus(marked
-      ? `已定位 ${slot.date} ${formatMinutes(slot.startMinutes)}-${formatMinutes(slot.endMinutes)}，标记 ${marked} 位可见老师。`
+      ? `已定位 ${slot.date} ${formatMinutes(slot.startMinutes)}-${formatMinutes(slot.endMinutes)}（${availability}），标记 ${marked} 位可见老师。`
       : `已尝试定位 ${slot.date} ${formatMinutes(slot.startMinutes)}-${formatMinutes(slot.endMinutes)}，当前可见区没有匹配老师。`);
   }
 
@@ -14320,7 +14454,11 @@
     const height = Math.max(8, Math.min(maxHeight - top, endOffset - startOffset));
     const marker = document.createElement('div');
     marker.className = 'ccheck-meeting-mark';
-    marker.title = `可排时间 ${formatMinutes(slot.startMinutes)}-${formatMinutes(slot.endMinutes)}`;
+    marker.title = `${slot.coordinationEvents?.length ? '协调后可排（需先调整面试）' : '可排时间'} ${formatMinutes(slot.startMinutes)}-${formatMinutes(slot.endMinutes)}`;
+    if (slot.coordinationEvents?.length) {
+      marker.style.background = 'rgba(245, 158, 11, 0.15)';
+      marker.style.borderColor = '#f59e0b';
+    }
     marker.style.top = `${top}px`;
     marker.style.height = `${height}px`;
     const oldPosition = getComputedStyle(cell).position;
