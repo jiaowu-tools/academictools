@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         小蚁课表校区通勤核对助手
 // @namespace    local.codex.campus-commute-checker
-// @version      1.7.0
+// @version      1.7.1
 // @description  在小蚁教师课表页检查校区通勤冲突，并查找老师/督导共同空档
 // @match        https://www.antiedu.tech/*
 // @downloadURL  https://raw.githubusercontent.com/jiaowu-tools/academictools/main/campus-commute-checker.user.js
@@ -15,7 +15,7 @@
 
   // Version rule: keep this value in sync with @version above.
   // x.y.9 -> x.y.10 -> x.(y+1).0; when y=10 and z+1>10, roll to (x+1).0.0.
-  const SCRIPT_VERSION = '1.7.0';
+  const SCRIPT_VERSION = '1.7.1';
   const PANEL_POSITION_STORAGE_KEY = 'campus-commute-checker.panelPosition';
   const DRAFT_NOTE_POSITION_STORAGE_KEY = 'campus-commute-checker.draftNotePosition';
   const DRAFT_MODAL_POSITION_STORAGE_KEY = 'campus-commute-checker.draftModalPosition';
@@ -8023,6 +8023,10 @@
         run: assertSelfTestInterviewCoordination
       },
       {
+        name: '排会议：11.24五人课表已有会议可随课程异地参会',
+        run: assertSelfTestExistingMeetingFlexibleCampus
+      },
+      {
         name: '排会议：混合参会允许提前通勤，紧凑跨校区仍不可排',
         run: assertSelfTestFlexibleMeetingCommute
       },
@@ -9836,6 +9840,63 @@
         }
       }
     });
+  }
+
+  function assertSelfTestExistingMeetingFlexibleCampus() {
+    const date = '2026-11-24';
+    const settings = {
+      dates: [date], durationMinutes: 45, meetingMode: 'any',
+      windowStartMinutes: 540, windowEndMinutes: 1090,
+      excludedRanges: CONFIG.meetingExcludedRanges.slice()
+    };
+    const rows = [
+      ['王雯浪', [[540, 635, '主管会'], [640, 735, '学术研究院会议'], [795, 890, '写作教研（M1002）'], [995, 1025, '小蚁全体例会'], [1045, 1090, '全体教师会议']]],
+      ['丁晨霞', [[640, 735, '低龄组教研会'], [795, 840, '【丁晨霞-季梦瑶】preA语法阅读批课'], [845, 890, '杜伟豪 语法阅读', '钱江'], [895, 940, '杜伟豪 语法阅读', '钱江'], [995, 1025, '小蚁全体例会'], [1045, 1090, '全体教师会议'], [1140, 1185, '严桐阳 语法写作', '钱江']]],
+      ['夏苏尚华', [[640, 735, '学术研究院会议'], [795, 890, '口语教研'], [995, 1025, '小蚁全体例会'], [1045, 1090, '全体教师会议（M101）'], [1095, 1135, '17:30后不加课，加课需沟通', '虚拟']]],
+      ['葛弘峰', [[640, 735, '学术研究院会议'], [795, 890, '写作教研'], [995, 1025, '小蚁全体例会'], [1045, 1090, '全体教师会议']]],
+      ['万益玟', [[640, 735, '低龄组教研会'], [995, 1025, '小蚁全体例会'], [1045, 1090, '全体教师会议']]]
+    ];
+    const events = rows.flatMap(([teacher, items]) => items.map(([startMinutes, endMinutes, text, campus], index) => makeSelfTestCourseEvent({
+      key: `nov24-${teacher}-${index}`, teacher, date, text, startMinutes, endMinutes,
+      start: formatMinutes(startMinutes), end: formatMinutes(endMinutes),
+      type: campus === '钱江' ? 'real' : 'online',
+      hex: campus === '钱江' ? '#FB5757' : '#FFAFDE',
+      campus: campus === '钱江' ? '钱江校区' : '线上',
+      courseCampus: campus === '钱江' ? '钱江校区' : campus === '虚拟' ? '虚拟校区' : '城建校区',
+      courseForm: '线下'
+    })));
+    const original = JSON.stringify(events);
+    const teachers = rows.map(([teacher]) => teacher);
+    ['online', 'any'].forEach((meetingMode) => {
+      const modeSettings = { ...settings, meetingMode };
+      const slots = mergeDisplayMeetingSlots(expandMeetingModeSettings(modeSettings)
+        .flatMap((mode) => buildFullMeetingSlots(events, teachers, mode)), events, teachers, modeSettings);
+      assertSupervisorRanges(slots, [{ startMinutes: 945, endMinutes: 990 }], `11.24 ${meetingMode} 应仅得到 15:45-16:30`);
+      const options = slots.flatMap((slot) => buildMeetingDraftSlotOptions(slot, modeSettings));
+      if (options.length !== 1 || options[0].startMinutes !== 945 || options[0].endMinutes !== 990) {
+        throw new Error('11.24 五人会议必须能生成且只生成 15:45-16:30 草稿');
+      }
+    });
+    const variants = [
+      { label: '会议后仍有异校区课程', change: (event) => event.teacher === '丁晨霞' && event.startMinutes === 1140
+        ? { ...event, startMinutes: 995, endMinutes: 1040, hex: '#B290FE', campus: '紫金港校区', courseCampus: '紫金港校区' } : event },
+      { label: '明确城建线下会议', change: (event) => event.teacher === '丁晨霞' && event.startMinutes === 995
+        ? { ...event, text: '小蚁全体例会（城建线下）' } : event },
+      { label: '会议前仍有课', change: (event) => event.teacher === '丁晨霞' && event.startMinutes === 895
+        ? { ...event, endMinutes: 960 } : event }
+    ];
+    variants.forEach(({ label, change }) => {
+      const changed = events.map(change);
+      const slots = buildOnlineMeetingSlots(changed, teachers, { ...settings, meetingMode: 'online' });
+      if (slots.some((slot) => slot.startMinutes <= 945 && slot.endMinutes >= 990)) {
+        throw new Error(`${label}时，不得误报 15:45-16:30 可排`);
+      }
+    });
+    const offline = buildOfflineMeetingSlots(events, teachers, { ...settings, meetingMode: 'offline' });
+    if (offline.some((slot) => slot.startMinutes <= 945 && slot.endMinutes >= 990)) {
+      throw new Error('全部线下仍需检查到场通勤，不能使用混合参会放宽');
+    }
+    if (JSON.stringify(events) !== original) throw new Error('排会议不得修改原始会议时间、校区或课程');
   }
 
   function assertSelfTestFlexibleMeetingCommute() {
@@ -13724,6 +13785,10 @@
     (events || []).forEach((event) => {
       if (!event || !teacherSet.has(event.teacher) || event.date !== date) return;
       if (!isFiniteMeetingTime(event) || !isOnlineCampusRuleContextEvent(event)) return;
+      // 普通会议可跟随课程所在地线上参会；实体课程与名称明确线下的会议仍锁定地点。
+      if (!getColorRealCampus(event)
+        && (event.isMeeting || CONFIG.onlineByColor[normalizeHex(event.hex)])
+        && !/线下/.test(String(event.text || ''))) return;
       if (!byTeacher.has(event.teacher)) byTeacher.set(event.teacher, []);
       byTeacher.get(event.teacher).push(event);
     });
